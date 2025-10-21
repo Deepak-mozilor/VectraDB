@@ -1,2 +1,0 @@
-fn(State<AppState>) -> impl Future<Output = Result<Json<DatabaseStats>, (axum::http::StatusCode, Json<ErrorResponse>)>> {get_stats}
-fn(State<AppState>) -> impl Future<Output = Result<Json<DatabaseStats>, (axum::http::StatusCode, Json<ErrorResponse>)>> {get_stats}: Handler<_, _>

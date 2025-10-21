@@ -1,2 +1,0 @@
-fn(State<AppState>, axum::extract::Path<std::string::String>, Json<UpsertVectorRequest>) -> impl Future<Output = Result<Json<VectorResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {upsert_vector}
-fn(State<AppState>, axum::extract::Path<std::string::String>, Json<UpsertVectorRequest>) -> impl Future<Output = Result<Json<VectorResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {upsert_vector}: Handler<_, _>

@@ -1,1 +1,0 @@
-/mnt/d/proj/VectraDB/target/debug/examples/chunking_examples: /mnt/d/proj/VectraDB/src/chunkers/examples/chunking_examples.rs /mnt/d/proj/VectraDB/src/chunkers/src/code.rs /mnt/d/proj/VectraDB/src/chunkers/src/document.rs /mnt/d/proj/VectraDB/src/chunkers/src/lib.rs /mnt/d/proj/VectraDB/src/chunkers/src/markdown.rs /mnt/d/proj/VectraDB/src/chunkers/src/production.rs
