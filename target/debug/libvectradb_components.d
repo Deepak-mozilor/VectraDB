@@ -1,0 +1,1 @@
+/mnt/d/proj/VectraDB/target/debug/libvectradb_components.rlib: /mnt/d/proj/VectraDB/src/components/src/indexing.rs /mnt/d/proj/VectraDB/src/components/src/lib.rs /mnt/d/proj/VectraDB/src/components/src/similarity.rs /mnt/d/proj/VectraDB/src/components/src/storage.rs /mnt/d/proj/VectraDB/src/components/src/vector_operations.rs

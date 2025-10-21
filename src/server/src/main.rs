@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Data directory for persistent storage
-    #[arg(short, long, default_value = "./vectradb_data")]
+    #[arg(short = 'D', long, default_value = "./vectradb_data")]
     data_dir: PathBuf,
 
     /// Server port
@@ -21,7 +21,7 @@ struct Args {
     algorithm: String,
 
     /// Vector dimension
-    #[arg(short, long, default_value = "384")]
+    #[arg(short = 'd', long, default_value = "384")]
     dimension: usize,
 
     /// Maximum connections for HNSW
