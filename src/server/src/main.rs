@@ -1,8 +1,15 @@
-use vectradb_api::start_server;
-use vectradb_storage::DatabaseConfig;
+use vectradb_api::{start_server, AppState};
+use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 use vectradb_search::SearchAlgorithm;
 use clap::Parser;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tonic::transport::Server;
+use axum;
+
+mod grpc;
+use grpc::VectraDbService;
 
 /// VectraDB Server - High-performance vector database
 #[derive(Parser, Debug)]
@@ -15,6 +22,14 @@ struct Args {
     /// Server port
     #[arg(short, long, default_value = "8080")]
     port: u16,
+
+    /// gRPC server port
+    #[arg(long, default_value = "50051")]
+    grpc_port: u16,
+
+    /// Enable gRPC server
+    #[arg(long, default_value = "true")]
+    enable_grpc: bool,
 
     /// Search algorithm (hnsw, lsh, pq)
     #[arg(short, long, default_value = "hnsw")]
@@ -97,10 +112,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Data directory: {}", config.data_dir);
     println!("Search algorithm: {:?}", config.search_algorithm);
     println!("Vector dimension: {}", args.dimension);
-    println!("Server port: {}", args.port);
+    println!("HTTP port: {}", args.port);
+    if args.enable_grpc {
+        println!("gRPC port: {}", args.grpc_port);
+    }
 
-    // Start the server
-    start_server(config, args.port).await?;
+    // Initialize database
+    let db = PersistentVectorDB::new(config.clone()).await?;
+    let db_arc = Arc::new(RwLock::new(db));
+
+    // Clone shared database for HTTP server
+    let http_db = db_arc.clone();
+    let http_config = config.clone();
+    let http_port = args.port;
+    
+    // Start HTTP server task
+    let http_handle = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
+            .await
+            .expect("Failed to bind HTTP port");
+        println!("VectraDB HTTP API server running on http://0.0.0.0:{}", http_port);
+        
+        let state = vectradb_api::AppState { db: http_db };
+        let app = vectradb_api::create_router(state);
+        
+        if let Err(e) = axum::serve(listener, app).await {
+            eprintln!("HTTP server error: {}", e);
+        }
+    });
+
+    // Start gRPC server if enabled
+    if args.enable_grpc {
+        let grpc_addr = format!("0.0.0.0:{}", args.grpc_port).parse()?;
+        let grpc_service = VectraDbService::new(db_arc).into_service();
+        
+        println!("VectraDB gRPC server running on {}", grpc_addr);
+        
+        let grpc_handle = tokio::spawn(async move {
+            if let Err(e) = Server::builder()
+                .add_service(grpc_service)
+                .serve(grpc_addr)
+                .await
+            {
+                eprintln!("gRPC server error: {}", e);
+            }
+        });
+
+        // Wait for either server to exit
+        tokio::select! {
+            _ = http_handle => {
+                println!("HTTP server exited");
+            }
+            _ = grpc_handle => {
+                println!("gRPC server exited");
+            }
+        }
+    } else {
+        // Only HTTP server
+        http_handle.await?;
+    }
 
     Ok(())
 }

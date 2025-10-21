@@ -11,9 +11,17 @@ path = "src/main.rs"
 vectradb-api = { path = "../api" }
 vectradb-storage = { path = "../storage" }
 vectradb-search = { path = "../search" }
+vectradb-components = { path = "../components" }
+ndarray = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 tokio = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+axum = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
 
 
 

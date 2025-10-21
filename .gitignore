@@ -1,0 +1,42 @@
+# Rust build artifacts
+/target/
+
+# Test databases and data directories
+test_vectradb/
+vectradb_data*/
+*.db
+*.sled
+
+# Log files
+*.log
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Generated files
+proto/*.rs
+*_pb2.py
+*_pb2_grpc.py
+*_pb2.pyi
+*_pb2_grpc.pyi
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# docs
+GRPC_TESTING.md
