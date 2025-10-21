@@ -1,0 +1,12 @@
+[package]
+name = "vectradb-components"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }

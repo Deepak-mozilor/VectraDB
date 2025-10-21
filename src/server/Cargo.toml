@@ -1,0 +1,21 @@
+[package]
+name = "vectradb-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vectradb-server"
+path = "src/main.rs"
+
+[dependencies]
+vectradb-api = { path = "../api" }
+vectradb-storage = { path = "../storage" }
+vectradb-search = { path = "../search" }
+clap = { workspace = true }
+env_logger = { workspace = true }
+tokio = { workspace = true }
+
+
+
+
+

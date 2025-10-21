@@ -1,0 +1,2 @@
+fn(State<AppState>, Json<SearchRequest>) -> impl Future<Output = Result<Json<SearchResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {search_vectors}
+fn(State<AppState>, Json<SearchRequest>) -> impl Future<Output = Result<Json<SearchResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {search_vectors}: Handler<_, _>

@@ -1,0 +1,13 @@
+[package]
+name = "vectradb-search"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ndarray = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+rand = "0.8"
+petgraph = "0.6"
+vectradb-components = { path = "../components" }

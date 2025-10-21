@@ -1,0 +1,2 @@
+fn(State<AppState>) -> impl Future<Output = Result<Json<Vec<std::string::String>>, (axum::http::StatusCode, Json<ErrorResponse>)>> {list_vectors}
+fn(State<AppState>) -> impl Future<Output = Result<Json<Vec<std::string::String>>, (axum::http::StatusCode, Json<ErrorResponse>)>> {list_vectors}: Handler<_, _>

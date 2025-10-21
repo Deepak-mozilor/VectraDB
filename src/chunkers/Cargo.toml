@@ -1,0 +1,13 @@
+[package]
+name = "vectradb-chunkers"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+regex = "1.10"
+pulldown-cmark = "0.10"
+# Tree-sitter dependencies can be added later when needed
+# tree-sitter = "0.20"

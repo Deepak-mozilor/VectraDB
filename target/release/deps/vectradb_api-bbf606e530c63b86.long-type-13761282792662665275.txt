@@ -1,0 +1,2 @@
+fn(State<AppState>, Json<CreateVectorRequest>) -> impl Future<Output = Result<Json<VectorResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {create_vector}
+fn(State<AppState>, Json<CreateVectorRequest>) -> impl Future<Output = Result<Json<VectorResponse>, (axum::http::StatusCode, Json<ErrorResponse>)>> {create_vector}: Handler<_, _>

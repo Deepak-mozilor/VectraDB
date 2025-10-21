@@ -1,0 +1,1 @@
+/mnt/d/proj/VectraDB/target/release/libvectradb_chunkers.rlib: /mnt/d/proj/VectraDB/src/chunkers/src/code.rs /mnt/d/proj/VectraDB/src/chunkers/src/document.rs /mnt/d/proj/VectraDB/src/chunkers/src/lib.rs /mnt/d/proj/VectraDB/src/chunkers/src/markdown.rs /mnt/d/proj/VectraDB/src/chunkers/src/production.rs

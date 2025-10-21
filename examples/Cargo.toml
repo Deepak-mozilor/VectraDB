@@ -1,0 +1,19 @@
+[package]
+name = "vectradb-examples"
+version = "0.1.0"
+edition = "2021"
+
+[[example]]
+name = "basic_usage"
+path = "basic_usage.rs"
+
+[dependencies]
+vectradb-components = { path = "../src/components" }
+vectradb-search = { path = "../src/search" }
+ndarray = { workspace = true }
+tokio = { workspace = true }
+
+
+
+
+
