@@ -527,7 +527,7 @@ If you use VectraDB in your research, please cite:
 ```bibtex
 @software{vectradb2025,
   title = {VectraDB: High-Performance Vector Database},
-  author = {Your Name},
+  author = {Amrithesh Kakkoth},
   year = {2025},
   url = {https://github.com/yourusername/VectraDB}
 }
