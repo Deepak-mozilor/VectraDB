@@ -156,8 +156,25 @@ impl AdvancedSearch for LSHIndex {
             }
         }
 
-        // Sort by similarity and take top-k
-        candidates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+        // If we don't have enough candidates, do a linear scan of all vectors
+        if candidates.len() < k {
+            for bucket in self.buckets.values() {
+                for doc in bucket {
+                    if !visited.contains(&doc.metadata.id) {
+                        let similarity = self.cosine_similarity(query, &doc.data);
+                        candidates.push(SearchResult {
+                            id: doc.metadata.id.clone(),
+                            distance: 1.0 - similarity,
+                            similarity,
+                        });
+                        visited.insert(doc.metadata.id.clone());
+                    }
+                }
+            }
+        }
+
+        // Sort by distance (ascending - closest first) and take top-k
+        candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         candidates.truncate(k);
 
         // Update stats
