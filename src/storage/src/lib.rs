@@ -289,15 +289,6 @@ impl VectorDatabase for PersistentVectorDB {
         vector: Array1<f32>,
         tags: Option<HashMap<String, String>>,
     ) -> Result<(), VectraDBError> {
-        // Check if vector already exists
-        if self
-            .vectors_tree
-            .contains_key(id.as_bytes())
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?
-        {
-            return Err(VectraDBError::VectorNotFound { id });
-        }
-
         let document = vectradb_components::vector_operations::create_vector_document(
             id.clone(),
             vector,
