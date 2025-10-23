@@ -439,8 +439,10 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         // Create config with matching dimension
-        let mut search_config = SearchConfig::default();
-        search_config.dimension = Some(3);
+        let search_config = SearchConfig {
+            dimension: Some(3),
+            ..Default::default()
+        };
 
         let config = DatabaseConfig {
             data_dir: temp_dir.path().to_string_lossy().to_string(),
