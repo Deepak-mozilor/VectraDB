@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Vector operations module - Core CRUD operations for vectors
-
 /// Create a new vector document
 pub fn create_vector_document(
     id: String,

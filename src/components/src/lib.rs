@@ -90,21 +90,11 @@ pub trait VectorDatabase {
 }
 
 /// Database statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DatabaseStats {
     pub total_vectors: usize,
     pub dimension: usize,
     pub memory_usage: u64,
-}
-
-impl Default for DatabaseStats {
-    fn default() -> Self {
-        Self {
-            total_vectors: 0,
-            dimension: 0,
-            memory_usage: 0,
-        }
-    }
 }
 
 // Module declarations

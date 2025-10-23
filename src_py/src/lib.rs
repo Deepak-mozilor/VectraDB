@@ -1,8 +1,10 @@
+#![allow(non_local_definitions)]
+
 use ndarray::Array1;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use vectradb_components::{
-    DatabaseStats, SimilarityResult, VectorDatabase, VectorDocument, VectraDBError,
+    DatabaseStats, SimilarityResult, VectorDatabase, VectorDocument,
 };
 use vectradb_search::SearchAlgorithm;
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};

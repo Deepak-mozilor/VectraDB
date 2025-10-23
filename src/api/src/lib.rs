@@ -364,7 +364,6 @@ pub async fn start_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_create_vector_request() {

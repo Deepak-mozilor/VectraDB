@@ -1,14 +1,14 @@
 use super::{AdvancedSearch, SearchResult, SearchStats};
 use ndarray::Array1;
-use petgraph::algo::dijkstra;
 use petgraph::graph::{DiGraph, NodeIndex};
 use rand::Rng;
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashSet};
 use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
 /// HNSW (Hierarchical Navigable Small World) index implementation
+/// HNSW (Hierarchical Navigable Small World) index implementation
+#[allow(dead_code)]
 pub struct HNSWIndex {
     graph: DiGraph<VectorDocument, f32>,
     entry_point: Option<NodeIndex>,
@@ -21,6 +21,7 @@ pub struct HNSWIndex {
 
 /// Node in the HNSW graph
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct HNSWNode {
     document: VectorDocument,
     level: usize,
@@ -59,7 +60,7 @@ impl HNSWIndex {
         query: &Array1<f32>,
         entry_points: Vec<NodeIndex>,
         ef: usize,
-        layer: usize,
+        _layer: usize,
     ) -> Vec<SearchResult> {
         let mut candidates = BinaryHeap::new();
         let mut visited = HashSet::new();
@@ -218,7 +219,7 @@ impl AdvancedSearch for HNSWIndex {
         let start_time = Instant::now();
 
         if let Some(entry) = self.entry_point {
-            let mut entry_points = vec![entry];
+            let entry_points = vec![entry];
             let candidates = self.search_layer(query, entry_points, k * 2, 0);
             let results = candidates.into_iter().take(k).collect();
 

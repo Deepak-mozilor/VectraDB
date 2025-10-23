@@ -1,13 +1,7 @@
 use ndarray::Array1;
-use petgraph::algo::dijkstra;
-use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::IntoNodeReferences;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
-use vectradb_components::indexing::VectorIndex;
-use vectradb_components::{SimilarityResult, VectorDocument, VectraDBError};
+use vectradb_components::{VectorDocument, VectraDBError};
 
 /// HNSW (Hierarchical Navigable Small World) search implementation
 pub mod hnsw;
@@ -73,15 +67,16 @@ pub struct SearchResult {
     pub similarity: f32,
 }
 
-impl PartialOrd for SearchResult {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.distance.partial_cmp(&self.distance) // Reverse for max-heap
+impl Ord for SearchResult {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse for max-heap (min distance = max priority)
+        other.distance.total_cmp(&self.distance)
     }
 }
 
-impl Ord for SearchResult {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+impl PartialOrd for SearchResult {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

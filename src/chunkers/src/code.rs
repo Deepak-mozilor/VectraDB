@@ -4,11 +4,18 @@ use regex::Regex;
 use std::collections::HashMap;
 
 /// Code chunker for source code files
+#[allow(dead_code)]
 pub struct CodeChunker {
     function_regex: Regex,
     class_regex: Regex,
     comment_regex: Regex,
     // language_parsers: HashMap<String, Language>, // Will be added when tree-sitter is integrated
+}
+
+impl Default for CodeChunker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CodeChunker {
@@ -26,7 +33,7 @@ impl CodeChunker {
     /// Detects the programming language from file extension or content
     fn detect_language(&self, filename: Option<&str>, content: &str) -> String {
         if let Some(filename) = filename {
-            let ext = filename.split('.').last().unwrap_or("").to_lowercase();
+            let ext = filename.split('.').next_back().unwrap_or("").to_lowercase();
             match ext.as_str() {
                 "rs" => "rust".to_string(),
                 "py" => "python".to_string(),
@@ -75,7 +82,7 @@ impl CodeChunker {
         let mut in_class = false;
 
         for (i, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
+            let _trimmed = line.trim();
 
             // Detect function/class start
             let is_function_start = self.function_regex.is_match(line);
@@ -105,7 +112,7 @@ impl CodeChunker {
                 in_class = is_class_start;
                 brace_count = 0;
             } else if !current_chunk.is_empty() {
-                current_chunk.push_str("\n");
+                current_chunk.push('\n');
                 current_chunk.push_str(line);
 
                 // Count braces to detect end of function/class
@@ -482,7 +489,7 @@ mod tests {
         let chunks = chunker.chunk(code, &config).unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
     }
 
     #[test]

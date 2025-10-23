@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Indexing strategies for efficient vector search
-
 /// Basic linear index - scans all vectors (O(n) search time)
 pub struct LinearIndex {
     vectors: Vec<VectorDocument>,
@@ -130,10 +129,7 @@ impl HashIndex {
         let bucket_keys = self.get_bucket_keys(&document.data);
 
         for key in bucket_keys {
-            self.buckets
-                .entry(key)
-                .or_insert_with(Vec::new)
-                .push(document.clone());
+            self.buckets.entry(key).or_default().push(document.clone());
         }
     }
 
@@ -239,6 +235,9 @@ pub trait VectorIndex {
     ) -> Result<Vec<SimilarityResult>, VectraDBError>;
     fn get_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError>;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn rebuild(&mut self, documents: Vec<VectorDocument>) -> Result<(), VectraDBError>;
 }
 

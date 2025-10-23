@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use vectradb_components::{
     DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata, VectraDBError,
 };
@@ -134,6 +133,7 @@ impl PersistentVectorDB {
     }
 
     /// Serialize and store vector data
+    #[allow(dead_code)]
     async fn store_vector(&self, id: &str, document: &VectorDocument) -> Result<(), VectraDBError> {
         // Serialize vector data
         let vector_bytes = bincode::serialize(&document.data)
@@ -191,6 +191,7 @@ impl PersistentVectorDB {
     }
 
     /// Load vector from persistent storage
+    #[allow(dead_code)]
     async fn load_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError> {
         // Load metadata
         let metadata_bytes = self
@@ -241,6 +242,7 @@ impl PersistentVectorDB {
     }
 
     /// Remove vector from persistent storage
+    #[allow(dead_code)]
     async fn remove_stored_vector(&self, id: &str) -> Result<(), VectraDBError> {
         self.vectors_tree
             .remove(id.as_bytes())

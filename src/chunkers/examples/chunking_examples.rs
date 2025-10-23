@@ -1,6 +1,6 @@
 use vectradb_chunkers::{
     create_chunker, production::ChunkingStrategy, production::ProductionChunker,
-    production::ProductionConfig, ChunkType, ChunkingConfig,
+    production::ProductionConfig, ChunkingConfig,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

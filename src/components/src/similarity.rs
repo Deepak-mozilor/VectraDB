@@ -1,8 +1,7 @@
 use crate::{SimilarityResult, VectorDocument, VectraDBError};
-use ndarray::{Array1, ArrayView1};
+use ndarray::ArrayView1;
 
 /// Similarity calculation functions for vector comparisons
-
 /// Calculate cosine similarity between two vectors
 pub fn cosine_similarity(a: &ArrayView1<f32>, b: &ArrayView1<f32>) -> Result<f32, VectraDBError> {
     if a.len() != b.len() {
@@ -180,7 +179,7 @@ pub fn batch_similarity_search(
 mod tests {
     use super::*;
     use crate::vector_operations::create_vector_document;
-    use std::collections::HashMap;
+    use ndarray::Array1;
 
     #[test]
     fn test_cosine_similarity() {

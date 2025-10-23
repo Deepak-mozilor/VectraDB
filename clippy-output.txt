@@ -1,0 +1,424 @@
+   Compiling pyo3-build-config v0.20.3
+    Checking vectradb-components v0.1.0 (/mnt/d/proj/VectraDB/src/components)
+    Checking vectradb-chunkers v0.1.0 (/mnt/d/proj/VectraDB/src/chunkers)
+   Compiling vectradb-server v0.1.0 (/mnt/d/proj/VectraDB/src/server)
+    Checking tonic v0.12.3
+warning: empty line after doc comment
+ --> src/components/src/indexing.rs:6:1
+  |
+6 | / /// Indexing strategies for efficient vector search
+7 | |
+  | |_^
+8 |   /// Basic linear index - scans all vectors (O(n) search time)
+9 |   pub struct LinearIndex {
+  |   ---------------------- the comment documents this struct
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#empty_line_after_doc_comments
+  = note: `#[warn(clippy::empty_line_after_doc_comments)]` on by default
+  = help: if the empty line is unintentional, remove it
+help: if the documentation should include the empty line include it in the comment
+  |
+7 | ///
+  |
+
+warning: empty line after doc comment
+ --> src/components/src/similarity.rs:4:1
+  |
+4 | / /// Similarity calculation functions for vector comparisons
+5 | |
+  | |_^
+6 |   /// Calculate cosine similarity between two vectors
+7 |   pub fn cosine_similarity(a: &ArrayView1<f32>, b: &ArrayView1<f32>) -> Result<f32, VectraDBError> {
+  |   ------------------------ the comment documents this function
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#empty_line_after_doc_comments
+  = help: if the empty line is unintentional, remove it
+help: if the documentation should include the empty line include it in the comment
+  |
+5 | ///
+  |
+
+warning: empty line after doc comment
+ --> src/components/src/vector_operations.rs:6:1
+  |
+6 | / /// Vector operations module - Core CRUD operations for vectors
+7 | |
+  | |_^
+8 |   /// Create a new vector document
+9 |   pub fn create_vector_document(
+  |   ----------------------------- the comment documents this function
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#empty_line_after_doc_comments
+  = help: if the empty line is unintentional, remove it
+help: if the documentation should include the empty line include it in the comment
+  |
+7 | ///
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:187:17
+    |
+187 |         let a = Array1::from_vec(vec![1.0, 0.0, 0.0]);
+    |                 ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:188:17
+    |
+188 |         let b = Array1::from_vec(vec![1.0, 0.0, 0.0]);
+    |                 ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:189:17
+    |
+189 |         let c = Array1::from_vec(vec![0.0, 1.0, 0.0]);
+    |                 ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:200:17
+    |
+200 |         let a = Array1::from_vec(vec![0.0, 0.0]);
+    |                 ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:201:17
+    |
+201 |         let b = Array1::from_vec(vec![3.0, 4.0]);
+    |                 ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:210:53
+    |
+210 |             create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None)
+    |                                                     ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:212:53
+    |
+212 |             create_vector_document("2".to_string(), Array1::from_vec(vec![0.0, 1.0, 0.0]), None)
+    |                                                     ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:214:53
+    |
+214 |             create_vector_document("3".to_string(), Array1::from_vec(vec![1.0, 1.0, 0.0]), None)
+    |                                                     ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+error[E0433]: failed to resolve: use of undeclared type `Array1`
+   --> src/components/src/similarity.rs:218:21
+    |
+218 |         let query = Array1::from_vec(vec![1.0, 0.0, 0.0]);
+    |                     ^^^^^^ use of undeclared type `Array1`
+    |
+help: consider importing one of these type aliases
+    |
+181 +     use crate::Array1;
+    |
+181 +     use ndarray::Array1;
+    |
+
+warning: unused import: `std::collections::HashMap`
+   --> src/components/src/similarity.rs:183:9
+    |
+183 |     use std::collections::HashMap;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `crate::vector_operations::create_vector_document`
+   --> src/components/src/storage.rs:222:9
+    |
+222 |     use crate::vector_operations::create_vector_document;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+   --> src/components/src/storage.rs:223:9
+    |
+223 |     use std::collections::HashMap;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `trimmed`
+  --> src/chunkers/src/code.rs:84:17
+   |
+84 |             let trimmed = line.trim();
+   |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_trimmed`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: variable `current_level` is assigned to, but never used
+  --> src/chunkers/src/markdown.rs:39:17
+   |
+39 |         let mut current_level = 0;
+   |                 ^^^^^^^^^^^^^
+   |
+   = note: consider using `_current_level` instead
+
+warning: value assigned to `current_level` is never read
+  --> src/chunkers/src/markdown.rs:67:17
+   |
+67 |                 current_level = trimmed.matches('#').count();
+   |                 ^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` on by default
+
+warning: unreachable pattern
+   --> src/chunkers/src/markdown.rs:279:17
+    |
+219 | /                 Event::Start(Tag::Heading {
+220 | |                     level,
+221 | |                     id: _,
+222 | |                     classes: _,
+223 | |                     attrs: _,
+224 | |                 }) => {
+    | |__________________- matches all the relevant values
+...
+279 | /                 Event::Start(Tag::Heading {
+280 | |                     level: _,
+281 | |                     id: _,
+282 | |                     classes: _,
+283 | |                     attrs: _,
+284 | |                 }) => {
+    | |__________________^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` on by default
+
+warning: variable `code_language` is assigned to, but never used
+   --> src/chunkers/src/markdown.rs:215:17
+    |
+215 |         let mut code_language = None;
+    |                 ^^^^^^^^^^^^^
+    |
+    = note: consider using `_code_language` instead
+
+warning: unused variable: `level`
+   --> src/chunkers/src/markdown.rs:220:21
+    |
+220 |                     level,
+    |                     ^^^^^ help: try ignoring the field: `level: _`
+
+warning: value assigned to `code_language` is never read
+   --> src/chunkers/src/markdown.rs:257:21
+    |
+257 |                     code_language = Some(lang_str.clone());
+    |                     ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `code_language` is never read
+   --> src/chunkers/src/markdown.rs:267:21
+    |
+267 |                     code_language = None;
+    |                     ^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `chunk_content`
+   --> src/chunkers/src/production.rs:224:17
+    |
+224 |             let chunk_content = &content[start..end];
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_chunk_content`
+
+warning: unused variable: `config`
+   --> src/chunkers/src/production.rs:359:9
+    |
+359 |         config: &ProductionConfig,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `config`
+   --> src/chunkers/src/production.rs:390:9
+    |
+390 |         config: &ProductionConfig,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `config`
+   --> src/chunkers/src/production.rs:545:9
+    |
+545 |         config: &ProductionConfig,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `quality`
+   --> src/chunkers/src/production.rs:546:9
+    |
+546 |         quality: &ChunkQuality,
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_quality`
+
+warning: field `comment_regex` is never read
+  --> src/chunkers/src/code.rs:10:5
+   |
+ 7 | pub struct CodeChunker {
+   |            ----------- field in this struct
+...
+10 |     comment_regex: Regex,
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: methods `chunk_by_ast` and `extract_heading_text` are never used
+   --> src/chunkers/src/markdown.rs:208:8
+    |
+ 22 | impl MarkdownChunker {
+    | -------------------- methods in this implementation
+...
+208 |     fn chunk_by_ast(&self, content: &str, config: &ChunkingConfig) -> Vec<Chunk> {
+    |        ^^^^^^^^^^^^
+...
+334 |     fn extract_heading_text(&self, content: &str) -> Option<String> {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple fields are never read
+   --> src/chunkers/src/production.rs:656:5
+    |
+654 | struct ContentAnalysis {
+    |        --------------- fields in this struct
+655 |     content_type: String,
+656 |     total_chars: usize,
+    |     ^^^^^^^^^^^
+657 |     total_lines: usize,
+    |     ^^^^^^^^^^^
+658 |     sentence_count: usize,
+    |     ^^^^^^^^^^^^^^
+659 |     paragraph_count: usize,
+    |     ^^^^^^^^^^^^^^^
+660 |     url_count: usize,
+    |     ^^^^^^^^^
+661 |     email_count: usize,
+    |     ^^^^^^^^^^^
+662 |     phone_count: usize,
+    |     ^^^^^^^^^^^
+    |
+    = note: `ContentAnalysis` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: method `chunk_by_ast` is never used
+   --> src/chunkers/src/markdown.rs:208:8
+    |
+ 22 | impl MarkdownChunker {
+    | -------------------- method in this implementation
+...
+208 |     fn chunk_by_ast(&self, content: &str, config: &ChunkingConfig) -> Vec<Chunk> {
+    |        ^^^^^^^^^^^^
+
+warning: fields `total_chars`, `total_lines`, `url_count`, `email_count`, and `phone_count` are never read
+   --> src/chunkers/src/production.rs:656:5
+    |
+654 | struct ContentAnalysis {
+    |        --------------- fields in this struct
+655 |     content_type: String,
+656 |     total_chars: usize,
+    |     ^^^^^^^^^^^
+657 |     total_lines: usize,
+    |     ^^^^^^^^^^^
+...
+660 |     url_count: usize,
+    |     ^^^^^^^^^
+661 |     email_count: usize,
+    |     ^^^^^^^^^^^
+662 |     phone_count: usize,
+    |     ^^^^^^^^^^^
+    |
+    = note: `ContentAnalysis` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: trait `VectorIndex` has a `len` method but no (possibly inherited) `is_empty` method
+   --> src/components/src/indexing.rs:231:1
+    |
+231 | / pub trait VectorIndex {
+232 | |     fn add_vector(&mut self, document: VectorDocument) -> Result<(), VectraDBError>;
+233 | |     fn remove_vector(&mut self, id: &str) -> Result<(), VectraDBError>;
+234 | |     fn update_vector(&mut self, id: &str, document: VectorDocument) -> Result<(), VectraDBError>;
+...   |
+242 | |     fn rebuild(&mut self, documents: Vec<VectorDocument>) -> Result<(), VectraDBError>;
+243 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#len_without_is_empty
+    = note: `#[warn(clippy::len_without_is_empty)]` on by default
+
+warning: usage of `contains_key` followed by `insert` on a `HashMap`
+   --> src/components/src/storage.rs:145:9
+    |
+145 | /         if vectors.contains_key(&id) {
+146 | |             // Update existing vector
+147 | |             let doc = vectors.get_mut(&id).unwrap();
+148 | |             let updated_doc =
+...   |
+154 | |             vectors.insert(id, doc);
+155 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#map_entry
+    = note: `#[warn(clippy::map_entry)]` on by default
+
+warning: clamp-like pattern without using clamp function
+   --> src/chunkers/src/production.rs:449:9
+    |
+449 |         (score / 100.0).max(0.0).min(1.0)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `(score / 100.0).clamp(0.0, 1.0)`
+    |
+    = note: clamp will panic if max < min, min.is_nan(), or max.is_nan()
+    = note: clamp returns NaN if the input is NaN
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_clamp
+    = note: `#[warn(clippy::manual_clamp)]` on by default
+
+For more information about this error, try `rustc --explain E0433`.
+   Compiling pyo3-macros-backend v0.20.3
+warning: `vectradb-components` (lib test) generated 6 warnings (3 duplicates)
+error: could not compile `vectradb-components` (lib test) due to 9 previous errors; 6 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `vectradb-components` (lib) generated 5 warnings
+warning: `vectradb-chunkers` (lib test) generated 17 warnings (13 duplicates)
+warning: `vectradb-chunkers` (lib) generated 17 warnings (2 duplicates)

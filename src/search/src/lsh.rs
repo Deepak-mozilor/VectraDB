@@ -6,6 +6,7 @@ use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
 /// LSH (Locality Sensitive Hashing) index implementation
+#[allow(dead_code)]
 pub struct LSHIndex {
     hash_functions: Vec<LSHFunction>,
     buckets: HashMap<String, Vec<VectorDocument>>,
@@ -68,6 +69,7 @@ impl LSHIndex {
     }
 
     /// Calculate Jaccard similarity between two hash signatures
+    #[allow(dead_code)]
     fn jaccard_similarity(&self, sig1: &str, sig2: &str) -> f32 {
         if sig1.len() != sig2.len() {
             return 0.0;
@@ -175,10 +177,7 @@ impl AdvancedSearch for LSHIndex {
         }
 
         let signature = self.hash_signature(&document.data);
-        self.buckets
-            .entry(signature)
-            .or_insert_with(Vec::new)
-            .push(document);
+        self.buckets.entry(signature).or_default().push(document);
 
         self.stats.total_vectors += 1;
         Ok(())

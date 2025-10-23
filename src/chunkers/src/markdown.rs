@@ -13,6 +13,12 @@ pub struct MarkdownChunker {
     image_regex: Regex,
 }
 
+impl Default for MarkdownChunker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MarkdownChunker {
     pub fn new() -> Self {
         Self {
@@ -30,7 +36,7 @@ impl MarkdownChunker {
         let lines: Vec<&str> = content.lines().collect();
         let mut current_section = Vec::<String>::new();
         let mut current_heading = None;
-        let mut current_level = 0;
+        let mut _current_level = 0;
         let mut start_line = 0;
 
         for (i, line) in lines.iter().enumerate() {
@@ -58,7 +64,7 @@ impl MarkdownChunker {
 
                 // Start new section
                 current_heading = Some(trimmed.to_string());
-                current_level = trimmed.matches('#').count();
+                _current_level = trimmed.matches('#').count();
                 start_line = i;
                 current_section.push(line.to_string());
             } else {
@@ -199,19 +205,20 @@ impl MarkdownChunker {
     }
 
     /// Chunks markdown using pulldown-cmark parser for more accurate parsing
+    #[allow(dead_code)]
     fn chunk_by_ast(&self, content: &str, config: &ChunkingConfig) -> Vec<Chunk> {
         let mut chunks = Vec::new();
         let parser = Parser::new(content);
         let mut current_chunk = String::new();
-        let mut current_heading = None;
+        let current_heading: Option<String> = None;
         let mut chunk_start = 0;
         let mut in_code_block = false;
-        let mut code_language = None;
+        let mut _code_language: Option<String> = None;
 
         for event in parser {
             match event {
                 Event::Start(Tag::Heading {
-                    level,
+                    level: _,
                     id: _,
                     classes: _,
                     attrs: _,
@@ -248,7 +255,7 @@ impl MarkdownChunker {
                         }
                         pulldown_cmark::CodeBlockKind::Indented => String::new(),
                     };
-                    code_language = Some(lang_str.clone());
+                    _code_language = Some(lang_str.clone());
                     current_chunk.push_str("```");
                     if !lang_str.is_empty() {
                         current_chunk.push_str(&lang_str);
@@ -258,7 +265,7 @@ impl MarkdownChunker {
                 Event::End(TagEnd::CodeBlock) => {
                     in_code_block = false;
                     current_chunk.push_str("```");
-                    code_language = None;
+                    _code_language = None;
                 }
                 Event::Start(Tag::Paragraph) => {
                     if !in_code_block {
@@ -268,16 +275,6 @@ impl MarkdownChunker {
                 Event::End(TagEnd::Paragraph) => {
                     if !in_code_block {
                         current_chunk.push('\n');
-                    }
-                }
-                Event::Start(Tag::Heading {
-                    level: _,
-                    id: _,
-                    classes: _,
-                    attrs: _,
-                }) => {
-                    if let Some(heading) = self.extract_heading_text(&current_chunk) {
-                        current_heading = Some(heading);
                     }
                 }
                 Event::End(TagEnd::Heading(_)) => {
@@ -325,6 +322,7 @@ impl MarkdownChunker {
     }
 
     /// Extracts heading text from markdown content
+    #[allow(dead_code)]
     fn extract_heading_text(&self, content: &str) -> Option<String> {
         for line in content.lines() {
             if self.heading_regex.is_match(line.trim()) {
@@ -558,7 +556,7 @@ mod tests {
         let chunks = chunker.chunk(markdown, &config).unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
     }
 
     #[test]

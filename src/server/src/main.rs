@@ -1,10 +1,8 @@
-use axum;
 use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
-use vectradb_api::{start_server, AppState};
 use vectradb_search::SearchAlgorithm;
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
@@ -126,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
-    let http_config = config.clone();
+    let _http_config = config.clone();
     let http_port = args.port;
 
     // Start HTTP server task

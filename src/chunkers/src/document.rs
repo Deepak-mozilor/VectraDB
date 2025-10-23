@@ -9,6 +9,12 @@ pub struct DocumentChunker {
     paragraph_regex: Regex,
 }
 
+impl Default for DocumentChunker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DocumentChunker {
     pub fn new() -> Self {
         Self {
@@ -70,7 +76,7 @@ impl DocumentChunker {
         for sentence in sentences {
             if current_chunk.is_empty() {
                 current_chunk = sentence.to_string();
-            } else if current_chunk.len() + sentence.len() + 1 <= config.max_chunk_size {
+            } else if current_chunk.len() + sentence.len() < config.max_chunk_size {
                 current_chunk.push_str(". ");
                 current_chunk.push_str(sentence);
             } else {
@@ -237,7 +243,7 @@ mod tests {
         let chunks = chunker.chunk(text, &config).unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
     }
 
     #[test]
@@ -255,7 +261,7 @@ mod tests {
         let chunks = chunker.chunk(text, &config).unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
     }
 
     #[test]

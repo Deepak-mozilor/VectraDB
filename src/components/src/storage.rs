@@ -1,4 +1,4 @@
-use crate::{DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata, VectraDBError};
+use crate::{DatabaseStats, VectorDatabase, VectorDocument, VectraDBError};
 use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -142,16 +142,22 @@ impl VectorDatabase for InMemoryVectorDB {
 
         let mut vectors = self.vectors.write().unwrap();
 
-        if vectors.contains_key(&id) {
-            // Update existing vector
-            let doc = vectors.get_mut(&id).unwrap();
-            let updated_doc =
-                crate::vector_operations::update_vector_document(doc.clone(), vector, tags)?;
-            *doc = updated_doc;
-        } else {
-            // Create new vector
-            let doc = crate::vector_operations::create_vector_document(id.clone(), vector, tags)?;
-            vectors.insert(id, doc);
+        use std::collections::hash_map::Entry;
+        match vectors.entry(id.clone()) {
+            Entry::Occupied(mut entry) => {
+                // Update existing vector
+                let updated_doc = crate::vector_operations::update_vector_document(
+                    entry.get().clone(),
+                    vector,
+                    tags,
+                )?;
+                *entry.get_mut() = updated_doc;
+            }
+            Entry::Vacant(entry) => {
+                // Create new vector
+                let doc = crate::vector_operations::create_vector_document(id, vector, tags)?;
+                entry.insert(doc);
+            }
         }
 
         Ok(())
@@ -219,8 +225,6 @@ pub trait StorageBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vector_operations::create_vector_document;
-    use std::collections::HashMap;
 
     #[test]
     fn test_in_memory_db_creation() {

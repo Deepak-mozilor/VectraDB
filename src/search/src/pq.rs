@@ -1,5 +1,5 @@
 use super::{AdvancedSearch, SearchResult, SearchStats};
-use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2};
+use ndarray::{s, Array1, Array2, ArrayView1};
 use rand::Rng;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -18,6 +18,7 @@ pub struct PQIndex {
 
 /// PQ codebook for a subspace
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct PQCodebook {
     centroids: Array2<f32>, // [codes_per_subspace, subspace_size]
     subspace_dim: usize,
@@ -99,7 +100,7 @@ impl PQIndex {
             let mut counts = vec![0; self.codes_per_subspace];
 
             // Assign each point to nearest centroid
-            for (point_idx, point) in data.iter().enumerate() {
+            for point in data.iter() {
                 let mut best_centroid = 0;
                 let mut best_distance = f32::INFINITY;
 
@@ -189,6 +190,7 @@ impl PQIndex {
     }
 
     /// Decode PQ codes back to approximate vector
+    #[allow(dead_code)]
     fn decode_vector(&self, codes: &[u8]) -> Result<Array1<f32>, VectraDBError> {
         if codes.len() != self.num_subspaces {
             return Err(VectraDBError::InvalidVector);

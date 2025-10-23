@@ -67,6 +67,12 @@ impl Default for ProductionConfig {
     }
 }
 
+impl Default for ProductionChunker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProductionChunker {
     pub fn new() -> Self {
         Self {
@@ -215,7 +221,7 @@ impl ProductionChunker {
         let mut chunks = Vec::new();
 
         for (start, end) in ranges {
-            let chunk_content = &content[start..end];
+            let _chunk_content = &content[start..end];
 
             // Find better boundary if possible
             let (adjusted_start, adjusted_end) =
@@ -350,7 +356,7 @@ impl ProductionChunker {
         &self,
         content: &str,
         target_size: usize,
-        config: &ProductionConfig,
+        _config: &ProductionConfig,
     ) -> (String, usize) {
         let chars: Vec<char> = content.chars().collect();
 
@@ -381,7 +387,7 @@ impl ProductionChunker {
         content: &str,
         start: usize,
         end: usize,
-        config: &ProductionConfig,
+        _config: &ProductionConfig,
     ) -> (usize, usize) {
         let boundaries = utils::find_semantic_boundaries(content);
 
@@ -440,7 +446,7 @@ impl ProductionChunker {
         let score = 206.835 - (1.015 * avg_words_per_sentence) - (84.6 * avg_syllables_per_word);
 
         // Normalize to 0-1 range
-        (score / 100.0).max(0.0).min(1.0)
+        (score / 100.0).clamp(0.0, 1.0)
     }
 
     /// Calculates information density
@@ -536,8 +542,8 @@ impl ProductionChunker {
     fn improve_chunk_quality(
         &self,
         chunk: Chunk,
-        config: &ProductionConfig,
-        quality: &ChunkQuality,
+        _config: &ProductionConfig,
+        _quality: &ChunkQuality,
     ) -> Chunk {
         // For now, return the chunk as-is
         // In a real implementation, this would try different boundaries
@@ -645,6 +651,7 @@ impl ProductionChunker {
 
 /// Content analysis result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ContentAnalysis {
     content_type: String,
     total_chars: usize,
@@ -725,7 +732,7 @@ mod tests {
             .unwrap();
 
         assert!(!chunks.is_empty());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
     }
 
     #[test]
