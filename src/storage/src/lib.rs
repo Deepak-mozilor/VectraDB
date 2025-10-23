@@ -437,11 +437,11 @@ mod tests {
     #[tokio::test]
     async fn test_persistent_db_operations() {
         let temp_dir = tempdir().unwrap();
-        
+
         // Create config with matching dimension
         let mut search_config = SearchConfig::default();
         search_config.dimension = Some(3);
-        
+
         let config = DatabaseConfig {
             data_dir: temp_dir.path().to_string_lossy().to_string(),
             index_config: search_config,
@@ -451,7 +451,9 @@ mod tests {
         let mut db = PersistentVectorDB::new(config).await.unwrap();
 
         let vector = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        assert!(db.create_vector("test_id".to_string(), vector, None).is_ok());
+        assert!(db
+            .create_vector("test_id".to_string(), vector, None)
+            .is_ok());
         assert!(db.get_vector("test_id").is_ok());
         assert!(db.delete_vector("test_id").is_ok());
     }
