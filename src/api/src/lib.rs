@@ -1,13 +1,12 @@
-use vectradb_components::{VectorDatabase, VectorDocument, VectraDBError, SimilarityResult, DatabaseStats};
+use vectradb_components::{VectorDatabase, VectraDBError, SimilarityResult, DatabaseStats};
 use vectradb_storage::{PersistentVectorDB, DatabaseConfig};
-use vectradb_search::SearchAlgorithm;
 use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     response::Json,
     routing::{get, post, delete, put},

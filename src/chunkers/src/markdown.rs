@@ -1,4 +1,4 @@
-use crate::{Chunk, ChunkType, Chunker, ChunkingConfig, utils};
+use crate::{Chunk, ChunkType, Chunker, ChunkingConfig};
 use anyhow::Result;
 use pulldown_cmark::{Parser, Event, Tag, TagEnd};
 use regex::Regex;
