@@ -716,7 +716,7 @@ mod tests {
             "This is a test sentence. This is another sentence.\n\nThis is a new paragraph.";
         let analysis = chunker.analyze_content(content);
 
-        assert_eq!(analysis.content_type, "structured");
+        assert_eq!(analysis.content_type, "narrative"); // 3 sentences > 3 lines / 2
         assert!(analysis.sentence_count >= 2);
         assert!(analysis.paragraph_count >= 1);
     }

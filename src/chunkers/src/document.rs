@@ -272,6 +272,6 @@ mod tests {
 
         assert!(metadata.contains_key("word_count"));
         assert!(metadata.contains_key("sentence_count"));
-        assert_eq!(metadata.get("word_count").unwrap(), "6");
+        assert_eq!(metadata.get("word_count").unwrap(), "5"); // "This is a test sentence" = 5 words
     }
 }
