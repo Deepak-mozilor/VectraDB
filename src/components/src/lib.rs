@@ -46,26 +46,45 @@ pub struct SimilarityResult {
 /// Vector database trait for different implementations
 pub trait VectorDatabase {
     /// Create a new vector in the database
-    fn create_vector(&mut self, id: String, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError>;
-    
+    fn create_vector(
+        &mut self,
+        id: String,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError>;
+
     /// Fetch a vector by ID
     fn get_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError>;
-    
+
     /// Update an existing vector
-    fn update_vector(&mut self, id: &str, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError>;
-    
+    fn update_vector(
+        &mut self,
+        id: &str,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError>;
+
     /// Delete a vector by ID
     fn delete_vector(&mut self, id: &str) -> Result<(), VectraDBError>;
-    
+
     /// Upsert (insert or update) a vector
-    fn upsert_vector(&mut self, id: String, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError>;
-    
+    fn upsert_vector(
+        &mut self,
+        id: String,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError>;
+
     /// Search for similar vectors
-    fn search_similar(&self, query_vector: Array1<f32>, top_k: usize) -> Result<Vec<SimilarityResult>, VectraDBError>;
-    
+    fn search_similar(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+    ) -> Result<Vec<SimilarityResult>, VectraDBError>;
+
     /// Get all vector IDs
     fn list_vectors(&self) -> Result<Vec<String>, VectraDBError>;
-    
+
     /// Get database statistics
     fn get_stats(&self) -> Result<DatabaseStats, VectraDBError>;
 }
@@ -89,11 +108,11 @@ impl Default for DatabaseStats {
 }
 
 // Module declarations
-pub mod vector_operations;
+pub mod indexing;
 pub mod similarity;
 pub mod storage;
-pub mod indexing;
+pub mod vector_operations;
 
 // Re-export main functionality
-pub use vector_operations::*;
 pub use similarity::*;
+pub use vector_operations::*;

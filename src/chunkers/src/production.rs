@@ -1,4 +1,4 @@
-use crate::{Chunk, ChunkType, Chunker, ChunkingConfig, utils};
+use crate::{utils, Chunk, ChunkType, Chunker, ChunkingConfig};
 use anyhow::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -73,8 +73,12 @@ impl ProductionChunker {
             sentence_regex: Regex::new(r"[.!?]+\s+").unwrap(),
             paragraph_regex: Regex::new(r"\n\s*\n").unwrap(),
             url_regex: Regex::new(r"https?://[^\s]+").unwrap(),
-            email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap(),
-            phone_regex: Regex::new(r"(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})").unwrap(),
+            email_regex: Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+                .unwrap(),
+            phone_regex: Regex::new(
+                r"(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})",
+            )
+            .unwrap(),
         }
     }
 
@@ -82,7 +86,7 @@ impl ProductionChunker {
     fn adaptive_chunk(&self, content: &str, config: &ProductionConfig) -> Vec<Chunk> {
         // Analyze content characteristics
         let content_analysis = self.analyze_content(content);
-        
+
         // Choose strategy based on analysis
         let strategy = match content_analysis.content_type.as_str() {
             "structured" => ChunkingStrategy::Semantic,
@@ -109,10 +113,11 @@ impl ProductionChunker {
         while !remaining_content.is_empty() {
             // Determine optimal chunk size for this segment
             let optimal_size = self.determine_optimal_chunk_size(&remaining_content, config);
-            
+
             // Extract chunk of optimal size
-            let (chunk_content, next_start) = self.extract_optimal_chunk(&remaining_content, optimal_size, config);
-            
+            let (chunk_content, next_start) =
+                self.extract_optimal_chunk(&remaining_content, optimal_size, config);
+
             // Create chunk
             let chunk = Chunk {
                 content: chunk_content.clone(),
@@ -143,7 +148,7 @@ impl ProductionChunker {
             };
 
             chunks.push(final_chunk);
-            
+
             // Update indices
             start_index += next_start;
             remaining_content = remaining_content[next_start..].to_string();
@@ -173,7 +178,11 @@ impl ProductionChunker {
                         start_index,
                         end_index: start_index + current_chunk.len(),
                         chunk_type: ChunkType::Production,
-                        metadata: self.create_production_metadata(&current_chunk, start_index, config),
+                        metadata: self.create_production_metadata(
+                            &current_chunk,
+                            start_index,
+                            config,
+                        ),
                     });
                     start_index += current_chunk.len();
                 }
@@ -198,22 +207,22 @@ impl ProductionChunker {
 
     /// Fixed-size chunking with intelligent boundaries
     fn fixed_size_chunk(&self, content: &str, config: &ProductionConfig) -> Vec<Chunk> {
-        let ranges = utils::split_with_overlap(content, config.max_chunk_size, config.base_config.overlap_size);
+        let ranges = utils::split_with_overlap(
+            content,
+            config.max_chunk_size,
+            config.base_config.overlap_size,
+        );
         let mut chunks = Vec::new();
 
         for (start, end) in ranges {
             let chunk_content = &content[start..end];
-            
+
             // Find better boundary if possible
-            let (adjusted_start, adjusted_end) = self.find_better_boundary(
-                content, 
-                start, 
-                end, 
-                config
-            );
+            let (adjusted_start, adjusted_end) =
+                self.find_better_boundary(content, start, end, config);
 
             let final_content = &content[adjusted_start..adjusted_end];
-            
+
             chunks.push(Chunk {
                 content: final_content.to_string(),
                 start_index: adjusted_start,
@@ -230,16 +239,20 @@ impl ProductionChunker {
     fn hybrid_chunk(&self, content: &str, config: &ProductionConfig) -> Vec<Chunk> {
         // First try semantic chunking
         let semantic_chunks = self.semantic_chunk(content, config);
-        
+
         // If chunks are too large, apply fixed-size chunking to large chunks
         let mut final_chunks = Vec::new();
-        
+
         for chunk in semantic_chunks {
             if chunk.content.len() <= config.max_chunk_size {
                 final_chunks.push(chunk);
             } else {
                 // Split large chunk using fixed-size approach
-                let ranges = utils::split_with_overlap(&chunk.content, config.max_chunk_size, config.base_config.overlap_size);
+                let ranges = utils::split_with_overlap(
+                    &chunk.content,
+                    config.max_chunk_size,
+                    config.base_config.overlap_size,
+                );
                 for (start, end) in ranges {
                     let sub_content = &chunk.content[start..end];
                     final_chunks.push(Chunk {
@@ -247,7 +260,11 @@ impl ProductionChunker {
                         start_index: chunk.start_index + start,
                         end_index: chunk.start_index + end,
                         chunk_type: ChunkType::Production,
-                        metadata: self.create_production_metadata(sub_content, chunk.start_index + start, config),
+                        metadata: self.create_production_metadata(
+                            sub_content,
+                            chunk.start_index + start,
+                            config,
+                        ),
                     });
                 }
             }
@@ -261,14 +278,14 @@ impl ProductionChunker {
         let lines: Vec<&str> = content.lines().collect();
         let total_chars = content.len();
         let total_lines = lines.len();
-        
+
         // Count different content types
         let sentence_count = self.sentence_regex.find_iter(content).count();
         let paragraph_count = self.paragraph_regex.find_iter(content).count();
         let url_count = self.url_regex.find_iter(content).count();
         let email_count = self.email_regex.find_iter(content).count();
         let phone_count = self.phone_regex.find_iter(content).count();
-        
+
         // Determine content type
         let content_type = if paragraph_count > total_lines / 3 {
             "structured"
@@ -289,8 +306,16 @@ impl ProductionChunker {
             url_count,
             email_count,
             phone_count,
-            avg_sentence_length: if sentence_count > 0 { total_chars as f64 / sentence_count as f64 } else { 0.0 },
-            avg_paragraph_length: if paragraph_count > 0 { total_chars as f64 / paragraph_count as f64 } else { 0.0 },
+            avg_sentence_length: if sentence_count > 0 {
+                total_chars as f64 / sentence_count as f64
+            } else {
+                0.0
+            },
+            avg_paragraph_length: if paragraph_count > 0 {
+                total_chars as f64 / paragraph_count as f64
+            } else {
+                0.0
+            },
         }
     }
 
@@ -301,7 +326,7 @@ impl ProductionChunker {
         }
 
         let analysis = self.analyze_content(content);
-        
+
         // Adjust chunk size based on content characteristics
         let base_size = config.max_chunk_size;
         let adjustment_factor = match analysis.content_type.as_str() {
@@ -312,25 +337,34 @@ impl ProductionChunker {
         };
 
         let optimal_size = (base_size as f64 * adjustment_factor) as usize;
-        
+
         // Ensure size is within bounds
-        std::cmp::max(config.min_chunk_size, std::cmp::min(optimal_size, config.max_chunk_size))
+        std::cmp::max(
+            config.min_chunk_size,
+            std::cmp::min(optimal_size, config.max_chunk_size),
+        )
     }
 
     /// Extracts optimal chunk respecting semantic boundaries
-    fn extract_optimal_chunk(&self, content: &str, target_size: usize, config: &ProductionConfig) -> (String, usize) {
+    fn extract_optimal_chunk(
+        &self,
+        content: &str,
+        target_size: usize,
+        config: &ProductionConfig,
+    ) -> (String, usize) {
         let chars: Vec<char> = content.chars().collect();
-        
+
         if chars.len() <= target_size {
             return (content.to_string(), chars.len());
         }
 
         // Find semantic boundaries near target size
         let boundaries = utils::find_semantic_boundaries(content);
-        
+
         // Find the best boundary within acceptable range
-        let acceptable_range = (target_size as f64 * 0.8) as usize..=(target_size as f64 * 1.2) as usize;
-        
+        let acceptable_range =
+            (target_size as f64 * 0.8) as usize..=(target_size as f64 * 1.2) as usize;
+
         for boundary in boundaries {
             if acceptable_range.contains(&boundary) {
                 return (chars[..boundary].iter().collect(), boundary);
@@ -342,15 +376,23 @@ impl ProductionChunker {
     }
 
     /// Finds better boundaries for chunking
-    fn find_better_boundary(&self, content: &str, start: usize, end: usize, config: &ProductionConfig) -> (usize, usize) {
+    fn find_better_boundary(
+        &self,
+        content: &str,
+        start: usize,
+        end: usize,
+        config: &ProductionConfig,
+    ) -> (usize, usize) {
         let boundaries = utils::find_semantic_boundaries(content);
-        
+
         // Look for boundaries near the current end
         let target_end = end;
         let search_range = 100; // Look within 100 characters
-        
+
         for boundary in boundaries {
-            if boundary >= target_end.saturating_sub(search_range) && boundary <= target_end + search_range {
+            if boundary >= target_end.saturating_sub(search_range)
+                && boundary <= target_end + search_range
+            {
                 return (start, boundary);
             }
         }
@@ -364,8 +406,10 @@ impl ProductionChunker {
         let information_density = self.calculate_information_density(&chunk.content);
         let semantic_coherence = self.calculate_semantic_coherence(&chunk.content);
         let structural_integrity = self.calculate_structural_integrity(&chunk.content);
-        
-        let overall_score = (readability_score + information_density + semantic_coherence + structural_integrity) / 4.0;
+
+        let overall_score =
+            (readability_score + information_density + semantic_coherence + structural_integrity)
+                / 4.0;
 
         ChunkQuality {
             readability_score,
@@ -380,19 +424,21 @@ impl ProductionChunker {
     fn calculate_readability_score(&self, content: &str) -> f64 {
         let words: Vec<&str> = content.split_whitespace().collect();
         let sentences: Vec<&str> = self.sentence_regex.split(content).collect();
-        
+
         if words.is_empty() || sentences.is_empty() {
             return 0.0;
         }
 
         let avg_words_per_sentence = words.len() as f64 / sentences.len() as f64;
-        let avg_syllables_per_word = words.iter()
+        let avg_syllables_per_word = words
+            .iter()
             .map(|word| self.count_syllables(word))
-            .sum::<usize>() as f64 / words.len() as f64;
+            .sum::<usize>() as f64
+            / words.len() as f64;
 
         // Simplified Flesch Reading Ease formula
         let score = 206.835 - (1.015 * avg_words_per_sentence) - (84.6 * avg_syllables_per_word);
-        
+
         // Normalize to 0-1 range
         (score / 100.0).max(0.0).min(1.0)
     }
@@ -402,14 +448,14 @@ impl ProductionChunker {
         let total_chars = content.len();
         let words: Vec<&str> = content.split_whitespace().collect();
         let unique_words: std::collections::HashSet<&str> = words.iter().cloned().collect();
-        
+
         if words.is_empty() {
             return 0.0;
         }
 
         let vocabulary_richness = unique_words.len() as f64 / words.len() as f64;
         let content_density = words.len() as f64 / total_chars as f64;
-        
+
         (vocabulary_richness + content_density) / 2.0
     }
 
@@ -417,18 +463,28 @@ impl ProductionChunker {
     fn calculate_semantic_coherence(&self, content: &str) -> f64 {
         // Simplified semantic coherence based on sentence transitions
         let sentences: Vec<&str> = self.sentence_regex.split(content).collect();
-        
+
         if sentences.len() < 2 {
             return 1.0;
         }
 
         // Check for transition words and sentence structure consistency
-        let transition_words = ["however", "therefore", "furthermore", "moreover", "additionally", "consequently"];
-        let transition_count = sentences.windows(2).map(|pair| {
-            transition_words.iter().any(|&word| 
-                pair[1].to_lowercase().contains(word)
-            ) as usize
-        }).sum::<usize>();
+        let transition_words = [
+            "however",
+            "therefore",
+            "furthermore",
+            "moreover",
+            "additionally",
+            "consequently",
+        ];
+        let transition_count = sentences
+            .windows(2)
+            .map(|pair| {
+                transition_words
+                    .iter()
+                    .any(|&word| pair[1].to_lowercase().contains(word)) as usize
+            })
+            .sum::<usize>();
 
         transition_count as f64 / (sentences.len() - 1) as f64
     }
@@ -437,16 +493,19 @@ impl ProductionChunker {
     fn calculate_structural_integrity(&self, content: &str) -> f64 {
         // Check for proper sentence structure and punctuation
         let sentences: Vec<&str> = self.sentence_regex.split(content).collect();
-        
+
         if sentences.is_empty() {
             return 0.0;
         }
 
-        let proper_sentences = sentences.iter().filter(|sentence| {
-            let trimmed = sentence.trim();
-            !trimmed.is_empty() && 
-            (trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?'))
-        }).count();
+        let proper_sentences = sentences
+            .iter()
+            .filter(|sentence| {
+                let trimmed = sentence.trim();
+                !trimmed.is_empty()
+                    && (trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?'))
+            })
+            .count();
 
         proper_sentences as f64 / sentences.len() as f64
     }
@@ -456,7 +515,7 @@ impl ProductionChunker {
         let vowels = "aeiouy";
         let mut count = 0;
         let mut prev_was_vowel = false;
-        
+
         for c in word.to_lowercase().chars() {
             let is_vowel = vowels.contains(c);
             if is_vowel && !prev_was_vowel {
@@ -464,31 +523,41 @@ impl ProductionChunker {
             }
             prev_was_vowel = is_vowel;
         }
-        
+
         // Handle silent 'e'
         if word.to_lowercase().ends_with('e') && count > 1 {
             count -= 1;
         }
-        
+
         std::cmp::max(1, count)
     }
 
     /// Improves chunk quality by adjusting boundaries
-    fn improve_chunk_quality(&self, chunk: Chunk, config: &ProductionConfig, quality: &ChunkQuality) -> Chunk {
+    fn improve_chunk_quality(
+        &self,
+        chunk: Chunk,
+        config: &ProductionConfig,
+        quality: &ChunkQuality,
+    ) -> Chunk {
         // For now, return the chunk as-is
         // In a real implementation, this would try different boundaries
         chunk
     }
 
     /// Creates metadata for production chunks
-    fn create_production_metadata(&self, content: &str, start_index: usize, config: &ProductionConfig) -> HashMap<String, String> {
+    fn create_production_metadata(
+        &self,
+        content: &str,
+        start_index: usize,
+        config: &ProductionConfig,
+    ) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
-        
+
         // Basic metrics
         let words: Vec<&str> = content.split_whitespace().collect();
         let sentences: Vec<&str> = self.sentence_regex.split(content).collect();
         let paragraphs: Vec<&str> = self.paragraph_regex.split(content).collect();
-        
+
         metadata.insert("word_count".to_string(), words.len().to_string());
         metadata.insert("sentence_count".to_string(), sentences.len().to_string());
         metadata.insert("paragraph_count".to_string(), paragraphs.len().to_string());
@@ -496,13 +565,19 @@ impl ProductionChunker {
         metadata.insert("start_index".to_string(), start_index.to_string());
         metadata.insert("chunking_method".to_string(), "production".to_string());
         metadata.insert("strategy".to_string(), format!("{:?}", config.strategy));
-        
+
         // Content analysis
         let analysis = self.analyze_content(content);
         metadata.insert("content_type".to_string(), analysis.content_type);
-        metadata.insert("avg_sentence_length".to_string(), format!("{:.2}", analysis.avg_sentence_length));
-        metadata.insert("avg_paragraph_length".to_string(), format!("{:.2}", analysis.avg_paragraph_length));
-        
+        metadata.insert(
+            "avg_sentence_length".to_string(),
+            format!("{:.2}", analysis.avg_sentence_length),
+        );
+        metadata.insert(
+            "avg_paragraph_length".to_string(),
+            format!("{:.2}", analysis.avg_paragraph_length),
+        );
+
         // Quality scores
         if config.enable_quality_scoring {
             let quality = self.score_chunk_quality(&Chunk {
@@ -512,12 +587,27 @@ impl ProductionChunker {
                 chunk_type: ChunkType::Production,
                 metadata: HashMap::new(),
             });
-            
-            metadata.insert("readability_score".to_string(), format!("{:.3}", quality.readability_score));
-            metadata.insert("information_density".to_string(), format!("{:.3}", quality.information_density));
-            metadata.insert("semantic_coherence".to_string(), format!("{:.3}", quality.semantic_coherence));
-            metadata.insert("structural_integrity".to_string(), format!("{:.3}", quality.structural_integrity));
-            metadata.insert("overall_quality".to_string(), format!("{:.3}", quality.overall_score));
+
+            metadata.insert(
+                "readability_score".to_string(),
+                format!("{:.3}", quality.readability_score),
+            );
+            metadata.insert(
+                "information_density".to_string(),
+                format!("{:.3}", quality.information_density),
+            );
+            metadata.insert(
+                "semantic_coherence".to_string(),
+                format!("{:.3}", quality.semantic_coherence),
+            );
+            metadata.insert(
+                "structural_integrity".to_string(),
+                format!("{:.3}", quality.structural_integrity),
+            );
+            metadata.insert(
+                "overall_quality".to_string(),
+                format!("{:.3}", quality.overall_score),
+            );
         }
 
         metadata
@@ -530,24 +620,25 @@ impl ProductionChunker {
         }
 
         let mut overlapped_chunks = Vec::new();
-        
+
         for (i, chunk) in chunks.iter().enumerate() {
             let mut overlapped_chunk = chunk.clone();
-            
+
             // Add context from previous chunk if enabled
             if config.preserve_context && i > 0 {
                 let prev_chunk = &chunks[i - 1];
-                let context_size = std::cmp::min(config.context_window_size, config.base_config.overlap_size);
-                
+                let context_size =
+                    std::cmp::min(config.context_window_size, config.base_config.overlap_size);
+
                 if context_size > 0 && prev_chunk.content.len() >= context_size {
                     let context = &prev_chunk.content[prev_chunk.content.len() - context_size..];
                     overlapped_chunk.content = format!("{} {}", context, chunk.content);
                 }
             }
-            
+
             overlapped_chunks.push(overlapped_chunk);
         }
-        
+
         overlapped_chunks
     }
 }
@@ -574,7 +665,7 @@ impl Chunker for ProductionChunker {
             base_config: config.clone(),
             ..Default::default()
         };
-        
+
         self.chunk_with_production_config(text, &production_config)
     }
 
@@ -585,7 +676,11 @@ impl Chunker for ProductionChunker {
 
 impl ProductionChunker {
     /// Chunks text with production-specific configuration
-    pub fn chunk_with_production_config(&self, text: &str, config: &ProductionConfig) -> Result<Vec<Chunk>> {
+    pub fn chunk_with_production_config(
+        &self,
+        text: &str,
+        config: &ProductionConfig,
+    ) -> Result<Vec<Chunk>> {
         let chunks = match config.strategy {
             ChunkingStrategy::Adaptive => self.adaptive_chunk(text, config),
             ChunkingStrategy::FixedSize => self.fixed_size_chunk(text, config),
@@ -610,9 +705,10 @@ mod tests {
     #[test]
     fn test_content_analysis() {
         let chunker = ProductionChunker::new();
-        let content = "This is a test sentence. This is another sentence.\n\nThis is a new paragraph.";
+        let content =
+            "This is a test sentence. This is another sentence.\n\nThis is a new paragraph.";
         let analysis = chunker.analyze_content(content);
-        
+
         assert_eq!(analysis.content_type, "structured");
         assert!(analysis.sentence_count >= 2);
         assert!(analysis.paragraph_count >= 1);
@@ -622,10 +718,12 @@ mod tests {
     fn test_adaptive_chunking() {
         let chunker = ProductionChunker::new();
         let config = ProductionConfig::default();
-        
+
         let content = "This is a test document with multiple sentences. It contains various types of content.\n\nThis is a new paragraph with more content.";
-        let chunks = chunker.chunk_with_production_config(content, &config).unwrap();
-        
+        let chunks = chunker
+            .chunk_with_production_config(content, &config)
+            .unwrap();
+
         assert!(!chunks.is_empty());
         assert!(chunks.len() >= 1);
     }
@@ -633,7 +731,8 @@ mod tests {
     #[test]
     fn test_quality_scoring() {
         let chunker = ProductionChunker::new();
-        let content = "This is a well-structured sentence. It has proper punctuation and good readability.";
+        let content =
+            "This is a well-structured sentence. It has proper punctuation and good readability.";
         let quality = chunker.score_chunk_quality(&Chunk {
             content: content.to_string(),
             start_index: 0,
@@ -641,7 +740,7 @@ mod tests {
             chunk_type: ChunkType::Production,
             metadata: HashMap::new(),
         });
-        
+
         assert!(quality.overall_score > 0.0);
         assert!(quality.overall_score <= 1.0);
     }
@@ -649,7 +748,7 @@ mod tests {
     #[test]
     fn test_syllable_counting() {
         let chunker = ProductionChunker::new();
-        
+
         assert_eq!(chunker.count_syllables("test"), 1);
         assert_eq!(chunker.count_syllables("testing"), 2);
         assert_eq!(chunker.count_syllables("beautiful"), 3);

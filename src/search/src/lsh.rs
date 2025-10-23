@@ -1,9 +1,9 @@
 use super::{AdvancedSearch, SearchResult, SearchStats};
-use vectradb_components::{VectorDocument, VectraDBError};
 use ndarray::Array1;
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
+use vectradb_components::{VectorDocument, VectraDBError};
 
 /// LSH (Locality Sensitive Hashing) index implementation
 pub struct LSHIndex {
@@ -24,11 +24,10 @@ struct LSHFunction {
 impl LSHFunction {
     fn new(dimension: usize) -> Self {
         let mut rng = rand::thread_rng();
-        let hyperplane: Array1<f32> = Array1::from_iter(
-            (0..dimension).map(|_| rng.gen_range(-1.0..1.0))
-        );
+        let hyperplane: Array1<f32> =
+            Array1::from_iter((0..dimension).map(|_| rng.gen_range(-1.0..1.0)));
         let threshold = rng.gen_range(-1.0..1.0);
-        
+
         Self {
             hyperplane,
             threshold,
@@ -47,7 +46,7 @@ impl LSHIndex {
         let hash_functions: Vec<LSHFunction> = (0..num_hashes)
             .map(|_| LSHFunction::new(dimension))
             .collect();
-        
+
         Self {
             hash_functions,
             buckets: HashMap::new(),
@@ -60,11 +59,11 @@ impl LSHIndex {
     /// Generate hash signature for a vector
     fn hash_signature(&self, vector: &Array1<f32>) -> String {
         let mut signature = String::new();
-        
+
         for hash_fn in &self.hash_functions {
             signature.push(if hash_fn.hash(vector) { '1' } else { '0' });
         }
-        
+
         signature
     }
 
@@ -73,10 +72,10 @@ impl LSHIndex {
         if sig1.len() != sig2.len() {
             return 0.0;
         }
-        
+
         let mut intersection = 0;
         let mut union = 0;
-        
+
         for (c1, c2) in sig1.chars().zip(sig2.chars()) {
             if c1 == '1' || c2 == '1' {
                 union += 1;
@@ -85,7 +84,7 @@ impl LSHIndex {
                 }
             }
         }
-        
+
         if union == 0 {
             0.0
         } else {
@@ -98,7 +97,7 @@ impl LSHIndex {
         let dot_product = a.dot(b);
         let norm_a = a.dot(a).sqrt();
         let norm_b = b.dot(b).sqrt();
-        
+
         if norm_a == 0.0 || norm_b == 0.0 {
             0.0
         } else {
@@ -118,11 +117,11 @@ impl AdvancedSearch for LSHIndex {
 
         let start_time = Instant::now();
         let query_signature = self.hash_signature(query);
-        
+
         // Find candidates using hash signatures
         let mut candidates = Vec::new();
         let mut visited = HashSet::new();
-        
+
         // Look in the same bucket as query
         if let Some(bucket) = self.buckets.get(&query_signature) {
             for doc in bucket {
@@ -137,7 +136,7 @@ impl AdvancedSearch for LSHIndex {
                 }
             }
         }
-        
+
         // Also look in similar buckets (Hamming distance = 1)
         for (bucket_signature, bucket) in &self.buckets {
             if self.hamming_distance(&query_signature, bucket_signature) <= 1 {
@@ -154,16 +153,16 @@ impl AdvancedSearch for LSHIndex {
                 }
             }
         }
-        
+
         // Sort by similarity and take top-k
         candidates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
         candidates.truncate(k);
-        
+
         // Update stats
         let search_time = start_time.elapsed().as_millis() as f64;
         let mut stats = self.stats.clone();
         stats.average_search_time_ms = (stats.average_search_time_ms + search_time) / 2.0;
-        
+
         Ok(candidates)
     }
 
@@ -176,15 +175,18 @@ impl AdvancedSearch for LSHIndex {
         }
 
         let signature = self.hash_signature(&document.data);
-        self.buckets.entry(signature).or_insert_with(Vec::new).push(document);
-        
+        self.buckets
+            .entry(signature)
+            .or_insert_with(Vec::new)
+            .push(document);
+
         self.stats.total_vectors += 1;
         Ok(())
     }
 
     fn remove(&mut self, id: &str) -> Result<(), VectraDBError> {
         let mut found = false;
-        
+
         for bucket in self.buckets.values_mut() {
             if let Some(pos) = bucket.iter().position(|doc| doc.metadata.id == id) {
                 bucket.remove(pos);
@@ -192,7 +194,7 @@ impl AdvancedSearch for LSHIndex {
                 break;
             }
         }
-        
+
         if found {
             self.stats.total_vectors -= 1;
             Ok(())
@@ -208,11 +210,11 @@ impl AdvancedSearch for LSHIndex {
 
     fn build_index(&mut self, documents: Vec<VectorDocument>) -> Result<(), VectraDBError> {
         let start_time = Instant::now();
-        
+
         for document in documents {
             self.insert(document)?;
         }
-        
+
         self.stats.construction_time_ms = start_time.elapsed().as_millis() as f64;
         Ok(())
     }
@@ -220,7 +222,8 @@ impl AdvancedSearch for LSHIndex {
     fn get_stats(&self) -> SearchStats {
         SearchStats {
             total_vectors: self.stats.total_vectors,
-            index_size_bytes: self.buckets.len() * 64 + self.stats.total_vectors * self.dimension * 4,
+            index_size_bytes: self.buckets.len() * 64
+                + self.stats.total_vectors * self.dimension * 4,
             average_search_time_ms: self.stats.average_search_time_ms,
             construction_time_ms: self.stats.construction_time_ms,
         }
@@ -233,7 +236,7 @@ impl LSHIndex {
         if s1.len() != s2.len() {
             return usize::MAX;
         }
-        
+
         s1.chars()
             .zip(s2.chars())
             .filter(|(c1, c2)| c1 != c2)
@@ -264,16 +267,20 @@ mod tests {
     #[test]
     fn test_lsh_insert_and_search() {
         let mut index = LSHIndex::new(3, 10);
-        
-        let doc1 = create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None).unwrap();
-        let doc2 = create_vector_document("2".to_string(), Array1::from_vec(vec![0.0, 1.0, 0.0]), None).unwrap();
-        
+
+        let doc1 =
+            create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None)
+                .unwrap();
+        let doc2 =
+            create_vector_document("2".to_string(), Array1::from_vec(vec![0.0, 1.0, 0.0]), None)
+                .unwrap();
+
         index.insert(doc1).unwrap();
         index.insert(doc2).unwrap();
-        
+
         let query = Array1::from_vec(vec![1.0, 0.0, 0.0]);
         let results = index.search(&query, 2).unwrap();
-        
+
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "1"); // Should be most similar
     }
@@ -286,4 +293,3 @@ mod tests {
         assert_eq!(index.hamming_distance("10101", "01010"), 5);
     }
 }
-

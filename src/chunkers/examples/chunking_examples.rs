@@ -1,6 +1,6 @@
 use vectradb_chunkers::{
-    create_chunker, ChunkingConfig, production::ProductionConfig, production::ProductionChunker, 
-    production::ChunkingStrategy, ChunkType
+    create_chunker, production::ChunkingStrategy, production::ProductionChunker,
+    production::ProductionConfig, ChunkType, ChunkingConfig,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -142,16 +142,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_metadata: true,
         custom_delimiters: None,
     };
-    
+
     let doc_chunks = document_chunker.chunk(document_text, &doc_config)?;
     println!("Created {} document chunks:", doc_chunks.len());
     for (i, chunk) in doc_chunks.iter().enumerate() {
-        println!("  Chunk {}: {} chars, {} words", 
-                 i + 1, 
-                 chunk.content.len(), 
-                 chunk.metadata.get("word_count").unwrap_or(&"0".to_string()));
-        println!("    Preview: {}...", 
-                 &chunk.content.chars().take(100).collect::<String>());
+        println!(
+            "  Chunk {}: {} chars, {} words",
+            i + 1,
+            chunk.content.len(),
+            chunk.metadata.get("word_count").unwrap_or(&"0".to_string())
+        );
+        println!(
+            "    Preview: {}...",
+            &chunk.content.chars().take(100).collect::<String>()
+        );
     }
     println!();
 
@@ -166,17 +170,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_metadata: true,
         custom_delimiters: None,
     };
-    
+
     let code_chunks = code_chunker.chunk(code_text, &code_config)?;
     println!("Created {} code chunks:", code_chunks.len());
     for (i, chunk) in code_chunks.iter().enumerate() {
-        println!("  Chunk {}: {} chars, {} lines, language: {}", 
-                 i + 1, 
-                 chunk.content.len(),
-                 chunk.metadata.get("line_count").unwrap_or(&"0".to_string()),
-                 chunk.metadata.get("language").unwrap_or(&"unknown".to_string()));
-        println!("    Block type: {}", 
-                 chunk.metadata.get("block_type").unwrap_or(&"mixed".to_string()));
+        println!(
+            "  Chunk {}: {} chars, {} lines, language: {}",
+            i + 1,
+            chunk.content.len(),
+            chunk.metadata.get("line_count").unwrap_or(&"0".to_string()),
+            chunk
+                .metadata
+                .get("language")
+                .unwrap_or(&"unknown".to_string())
+        );
+        println!(
+            "    Block type: {}",
+            chunk
+                .metadata
+                .get("block_type")
+                .unwrap_or(&"mixed".to_string())
+        );
     }
     println!();
 
@@ -191,15 +205,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         include_metadata: true,
         custom_delimiters: None,
     };
-    
+
     let md_chunks = markdown_chunker.chunk(markdown_text, &md_config)?;
     println!("Created {} markdown chunks:", md_chunks.len());
     for (i, chunk) in md_chunks.iter().enumerate() {
-        println!("  Chunk {}: {} chars, {} headings, {} code blocks", 
-                 i + 1, 
-                 chunk.content.len(),
-                 chunk.metadata.get("heading_count").unwrap_or(&"0".to_string()),
-                 chunk.metadata.get("code_block_count").unwrap_or(&"0".to_string()));
+        println!(
+            "  Chunk {}: {} chars, {} headings, {} code blocks",
+            i + 1,
+            chunk.content.len(),
+            chunk
+                .metadata
+                .get("heading_count")
+                .unwrap_or(&"0".to_string()),
+            chunk
+                .metadata
+                .get("code_block_count")
+                .unwrap_or(&"0".to_string())
+        );
         if let Some(heading) = chunk.metadata.get("heading") {
             println!("    Section: {}", heading);
         }
@@ -227,66 +249,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         preserve_context: true,
         context_window_size: 50,
     };
-    
-    let prod_chunks = production_chunker.chunk_with_production_config(document_text, &prod_config)?;
+
+    let prod_chunks =
+        production_chunker.chunk_with_production_config(document_text, &prod_config)?;
     println!("Created {} production chunks:", prod_chunks.len());
     for (i, chunk) in prod_chunks.iter().enumerate() {
-        println!("  Chunk {}: {} chars, quality: {}", 
-                 i + 1, 
-                 chunk.content.len(),
-                 chunk.metadata.get("overall_quality").unwrap_or(&"N/A".to_string()));
-        println!("    Content type: {}, strategy: {}", 
-                 chunk.metadata.get("content_type").unwrap_or(&"unknown".to_string()),
-                 chunk.metadata.get("strategy").unwrap_or(&"unknown".to_string()));
+        println!(
+            "  Chunk {}: {} chars, quality: {}",
+            i + 1,
+            chunk.content.len(),
+            chunk
+                .metadata
+                .get("overall_quality")
+                .unwrap_or(&"N/A".to_string())
+        );
+        println!(
+            "    Content type: {}, strategy: {}",
+            chunk
+                .metadata
+                .get("content_type")
+                .unwrap_or(&"unknown".to_string()),
+            chunk
+                .metadata
+                .get("strategy")
+                .unwrap_or(&"unknown".to_string())
+        );
     }
     println!();
 
     // Test different production strategies
     println!("5. Production Strategies Comparison");
     println!("===================================");
-    
+
     let strategies = vec![
         ChunkingStrategy::Adaptive,
         ChunkingStrategy::FixedSize,
         ChunkingStrategy::Semantic,
         ChunkingStrategy::Hybrid,
     ];
-    
+
     for strategy in strategies {
         let mut test_config = prod_config.clone();
         test_config.strategy = strategy.clone();
-        
-        let chunks = production_chunker.chunk_with_production_config(document_text, &test_config)?;
-        println!("  {:?}: {} chunks, avg quality: {:.3}", 
-                 strategy, 
-                 chunks.len(),
-                 chunks.iter()
-                     .filter_map(|c| c.metadata.get("overall_quality"))
-                     .filter_map(|q| q.parse::<f64>().ok())
-                     .sum::<f64>() / chunks.len() as f64);
+
+        let chunks =
+            production_chunker.chunk_with_production_config(document_text, &test_config)?;
+        println!(
+            "  {:?}: {} chunks, avg quality: {:.3}",
+            strategy,
+            chunks.len(),
+            chunks
+                .iter()
+                .filter_map(|c| c.metadata.get("overall_quality"))
+                .filter_map(|q| q.parse::<f64>().ok())
+                .sum::<f64>()
+                / chunks.len() as f64
+        );
     }
     println!();
 
     // Performance comparison
     println!("6. Performance Metrics");
     println!("======================");
-    
+
     let start = std::time::Instant::now();
     let _ = document_chunker.chunk(document_text, &doc_config)?;
     let doc_time = start.elapsed();
-    
+
     let start = std::time::Instant::now();
     let _ = code_chunker.chunk(code_text, &code_config)?;
     let code_time = start.elapsed();
-    
+
     let start = std::time::Instant::now();
     let _ = markdown_chunker.chunk(markdown_text, &md_config)?;
     let md_time = start.elapsed();
-    
+
     let start = std::time::Instant::now();
     let _ = production_chunker.chunk_with_production_config(document_text, &prod_config)?;
     let prod_time = start.elapsed();
-    
+
     println!("  Document chunking: {:?}", doc_time);
     println!("  Code chunking: {:?}", code_time);
     println!("  Markdown chunking: {:?}", md_time);
@@ -294,4 +335,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

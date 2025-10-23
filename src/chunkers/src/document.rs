@@ -1,4 +1,4 @@
-use crate::{Chunk, ChunkType, Chunker, ChunkingConfig, utils};
+use crate::{utils, Chunk, ChunkType, Chunker, ChunkingConfig};
 use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
@@ -106,25 +106,27 @@ impl DocumentChunker {
     /// Creates metadata for a document chunk
     fn create_metadata(&self, content: &str, start_index: usize) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
-        
+
         // Word count
         let word_count = content.split_whitespace().count();
         metadata.insert("word_count".to_string(), word_count.to_string());
-        
+
         // Sentence count
         let sentence_count = self.sentence_regex.find_iter(content).count() + 1;
         metadata.insert("sentence_count".to_string(), sentence_count.to_string());
-        
+
         // Paragraph count
         let paragraph_count = self.paragraph_regex.find_iter(content).count() + 1;
         metadata.insert("paragraph_count".to_string(), paragraph_count.to_string());
-        
+
         // Reading level estimation (simple)
-        let avg_word_length = content.split_whitespace()
-            .map(|w| w.len())
-            .sum::<usize>() as f64 / word_count as f64;
-        metadata.insert("avg_word_length".to_string(), format!("{:.2}", avg_word_length));
-        
+        let avg_word_length =
+            content.split_whitespace().map(|w| w.len()).sum::<usize>() as f64 / word_count as f64;
+        metadata.insert(
+            "avg_word_length".to_string(),
+            format!("{:.2}", avg_word_length),
+        );
+
         metadata.insert("chunking_method".to_string(), "document".to_string());
         metadata.insert("start_index".to_string(), start_index.to_string());
 
@@ -138,37 +140,35 @@ impl DocumentChunker {
         }
 
         let mut overlapped_chunks = Vec::new();
-        
+
         for (i, chunk) in chunks.iter().enumerate() {
             let mut overlapped_chunk = chunk.clone();
-            
+
             // Add overlap from previous chunk
             if i > 0 {
                 let prev_chunk = &chunks[i - 1];
                 let overlap_start = std::cmp::max(
                     prev_chunk.end_index.saturating_sub(config.overlap_size),
-                    prev_chunk.start_index
+                    prev_chunk.start_index,
                 );
                 let overlap_text = &prev_chunk.content[overlap_start - prev_chunk.start_index..];
                 overlapped_chunk.content = format!("{} {}", overlap_text, chunk.content);
                 overlapped_chunk.start_index = overlap_start;
             }
-            
+
             // Add overlap to next chunk
             if i < chunks.len() - 1 {
                 let next_chunk = &chunks[i + 1];
-                let overlap_end = std::cmp::min(
-                    chunk.end_index + config.overlap_size,
-                    next_chunk.end_index
-                );
+                let overlap_end =
+                    std::cmp::min(chunk.end_index + config.overlap_size, next_chunk.end_index);
                 let overlap_text = &next_chunk.content[..overlap_end - chunk.end_index];
                 overlapped_chunk.content = format!("{} {}", chunk.content, overlap_text);
                 overlapped_chunk.end_index = overlap_end;
             }
-            
+
             overlapped_chunks.push(overlapped_chunk);
         }
-        
+
         overlapped_chunks
     }
 }
@@ -178,25 +178,30 @@ impl Chunker for DocumentChunker {
         let chunks = if config.preserve_semantics {
             // Try paragraph-based chunking first
             let paragraph_chunks = self.chunk_by_paragraphs(text, config);
-            
+
             // If any chunk is too large, fall back to sentence-based chunking
-            if paragraph_chunks.iter().any(|c| c.content.len() > config.max_chunk_size) {
+            if paragraph_chunks
+                .iter()
+                .any(|c| c.content.len() > config.max_chunk_size)
+            {
                 self.chunk_by_sentences(text, config)
             } else {
                 paragraph_chunks
             }
         } else {
             // Simple character-based chunking
-            let ranges = utils::split_with_overlap(text, config.max_chunk_size, config.overlap_size);
-            ranges.into_iter().map(|(start, end)| {
-                Chunk {
+            let ranges =
+                utils::split_with_overlap(text, config.max_chunk_size, config.overlap_size);
+            ranges
+                .into_iter()
+                .map(|(start, end)| Chunk {
                     content: text[start..end].to_string(),
                     start_index: start,
                     end_index: end,
                     chunk_type: ChunkType::Document,
                     metadata: self.create_metadata(&text[start..end], start),
-                }
-            }).collect()
+                })
+                .collect()
         };
 
         Ok(self.apply_overlap(chunks, config))
@@ -227,10 +232,10 @@ mod tests {
             include_metadata: true,
             custom_delimiters: None,
         };
-        
+
         let text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
         let chunks = chunker.chunk(text, &config).unwrap();
-        
+
         assert!(!chunks.is_empty());
         assert!(chunks.len() >= 1);
     }
@@ -245,10 +250,10 @@ mod tests {
             include_metadata: true,
             custom_delimiters: None,
         };
-        
+
         let text = "First sentence. Second sentence. Third sentence.";
         let chunks = chunker.chunk(text, &config).unwrap();
-        
+
         assert!(!chunks.is_empty());
         assert!(chunks.len() >= 1);
     }
@@ -258,10 +263,9 @@ mod tests {
         let chunker = DocumentChunker::new();
         let content = "This is a test sentence.";
         let metadata = chunker.create_metadata(content, 0);
-        
+
         assert!(metadata.contains_key("word_count"));
         assert!(metadata.contains_key("sentence_count"));
         assert_eq!(metadata.get("word_count").unwrap(), "6");
     }
 }
-

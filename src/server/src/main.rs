@@ -1,12 +1,12 @@
-use vectradb_api::{start_server, AppState};
-use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
-use vectradb_search::SearchAlgorithm;
+use axum;
 use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
-use axum;
+use vectradb_api::{start_server, AppState};
+use vectradb_search::SearchAlgorithm;
+use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 mod grpc;
 use grpc::VectraDbService;
@@ -82,7 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "lsh" => SearchAlgorithm::LSH,
         "pq" => SearchAlgorithm::PQ,
         _ => {
-            eprintln!("Invalid algorithm: {}. Supported algorithms: hnsw, lsh, pq", args.algorithm);
+            eprintln!(
+                "Invalid algorithm: {}. Supported algorithms: hnsw, lsh, pq",
+                args.algorithm
+            );
             std::process::exit(1);
         }
     };
@@ -125,17 +128,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_db = db_arc.clone();
     let http_config = config.clone();
     let http_port = args.port;
-    
+
     // Start HTTP server task
     let http_handle = tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
             .await
             .expect("Failed to bind HTTP port");
-        println!("VectraDB HTTP API server running on http://0.0.0.0:{}", http_port);
-        
+        println!(
+            "VectraDB HTTP API server running on http://0.0.0.0:{}",
+            http_port
+        );
+
         let state = vectradb_api::AppState { db: http_db };
         let app = vectradb_api::create_router(state);
-        
+
         if let Err(e) = axum::serve(listener, app).await {
             eprintln!("HTTP server error: {}", e);
         }
@@ -145,9 +151,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.enable_grpc {
         let grpc_addr = format!("0.0.0.0:{}", args.grpc_port).parse()?;
         let grpc_service = VectraDbService::new(db_arc).into_service();
-        
+
         println!("VectraDB gRPC server running on {}", grpc_addr);
-        
+
         let grpc_handle = tokio::spawn(async move {
             if let Err(e) = Server::builder()
                 .add_service(grpc_service)
@@ -174,8 +180,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-
-
-
-

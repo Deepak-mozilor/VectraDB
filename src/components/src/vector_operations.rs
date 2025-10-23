@@ -80,12 +80,12 @@ pub fn validate_vector(vector: &Array1<f32>) -> Result<(), VectraDBError> {
 /// Normalize vector to unit length
 pub fn normalize_vector(mut vector: Array1<f32>) -> Result<Array1<f32>, VectraDBError> {
     validate_vector(&vector)?;
-    
+
     let norm = vector.dot(&vector).sqrt();
     if norm == 0.0 {
         return Err(VectraDBError::InvalidVector);
     }
-    
+
     vector /= norm;
     Ok(vector)
 }
@@ -100,7 +100,7 @@ pub fn create_zero_vector(dimension: usize) -> Array1<f32> {
 pub fn create_random_vector(dimension: usize) -> Array1<f32> {
     use ndarray::Array;
     use rand::Rng;
-    
+
     let mut rng = rand::thread_rng();
     Array::from_iter((0..dimension).map(|_| rng.gen::<f32>()))
 }
@@ -115,9 +115,10 @@ mod tests {
         let vector = Array1::from_vec(vec![1.0, 2.0, 3.0]);
         let mut tags = HashMap::new();
         tags.insert("category".to_string(), "test".to_string());
-        
-        let doc = create_vector_document("test_id".to_string(), vector.clone(), Some(tags)).unwrap();
-        
+
+        let doc =
+            create_vector_document("test_id".to_string(), vector.clone(), Some(tags)).unwrap();
+
         assert_eq!(doc.metadata.id, "test_id");
         assert_eq!(doc.metadata.dimension, 3);
         assert_eq!(doc.data, vector);
@@ -140,9 +141,8 @@ mod tests {
     fn test_normalize_vector() {
         let vector = Array1::from_vec(vec![3.0, 4.0]);
         let normalized = normalize_vector(vector).unwrap();
-        
+
         let expected_norm = (normalized.dot(&normalized)).sqrt();
         assert!((expected_norm - 1.0).abs() < 1e-6);
     }
 }
-

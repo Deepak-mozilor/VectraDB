@@ -2,13 +2,13 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub mod document;
 pub mod code;
+pub mod document;
 pub mod markdown;
 pub mod production;
 
-pub use document::DocumentChunker;
 pub use code::CodeChunker;
+pub use document::DocumentChunker;
 pub use markdown::MarkdownChunker;
 pub use production::ProductionChunker;
 
@@ -75,14 +75,10 @@ pub mod utils {
     use super::*;
 
     /// Splits text into chunks with overlap
-    pub fn split_with_overlap(
-        text: &str,
-        max_size: usize,
-        overlap: usize,
-    ) -> Vec<(usize, usize)> {
+    pub fn split_with_overlap(text: &str, max_size: usize, overlap: usize) -> Vec<(usize, usize)> {
         let mut chunks = Vec::new();
         let chars: Vec<char> = text.chars().collect();
-        
+
         if chars.len() <= max_size {
             return vec![(0, chars.len())];
         }
@@ -91,11 +87,11 @@ pub mod utils {
         while start < chars.len() {
             let end = std::cmp::min(start + max_size, chars.len());
             chunks.push((start, end));
-            
+
             if end >= chars.len() {
                 break;
             }
-            
+
             start = end - overlap;
         }
 
@@ -106,7 +102,7 @@ pub mod utils {
     pub fn find_semantic_boundaries(text: &str) -> Vec<usize> {
         let mut boundaries = Vec::new();
         let chars: Vec<char> = text.chars().collect();
-        
+
         for (i, char) in chars.iter().enumerate() {
             match char {
                 '.' | '!' | '?' => {
@@ -124,7 +120,7 @@ pub mod utils {
                 _ => {}
             }
         }
-        
+
         boundaries.push(chars.len());
         boundaries.sort();
         boundaries.dedup();
@@ -137,15 +133,15 @@ pub mod utils {
         source_info: Option<&str>,
     ) -> HashMap<String, String> {
         let mut metadata = chunk.metadata.clone();
-        
+
         if let Some(source) = source_info {
             metadata.insert("source".to_string(), source.to_string());
         }
-        
+
         metadata.insert("length".to_string(), chunk.content.len().to_string());
         metadata.insert("start_index".to_string(), chunk.start_index.to_string());
         metadata.insert("end_index".to_string(), chunk.end_index.to_string());
-        
+
         metadata
     }
 }
@@ -167,7 +163,7 @@ mod tests {
     fn test_chunker_factory() {
         let document_chunker = create_chunker("document");
         assert_eq!(document_chunker.chunk_type(), ChunkType::Document);
-        
+
         let code_chunker = create_chunker("code");
         assert_eq!(code_chunker.chunk_type(), ChunkType::Code);
     }
@@ -176,7 +172,7 @@ mod tests {
     fn test_split_with_overlap() {
         let text = "This is a test text that is longer than the max size.";
         let chunks = utils::split_with_overlap(text, 20, 5);
-        
+
         assert!(!chunks.is_empty());
         assert_eq!(chunks[0], (0, 20));
     }
@@ -185,9 +181,8 @@ mod tests {
     fn test_find_semantic_boundaries() {
         let text = "First sentence. Second sentence! Third sentence?";
         let boundaries = utils::find_semantic_boundaries(text);
-        
+
         assert!(!boundaries.is_empty());
         assert!(boundaries.contains(&15)); // End of first sentence
     }
 }
-

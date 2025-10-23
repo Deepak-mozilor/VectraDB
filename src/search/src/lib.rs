@@ -1,13 +1,13 @@
-use vectradb_components::{VectorDocument, SimilarityResult, VectraDBError};
-use vectradb_components::indexing::VectorIndex;
 use ndarray::Array1;
-use rand::Rng;
-use std::collections::{HashMap, HashSet, BinaryHeap};
-use std::cmp::Ordering;
-use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::algo::dijkstra;
+use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::IntoNodeReferences;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use vectradb_components::indexing::VectorIndex;
+use vectradb_components::{SimilarityResult, VectorDocument, VectraDBError};
 
 /// HNSW (Hierarchical Navigable Small World) search implementation
 pub mod hnsw;
@@ -30,12 +30,12 @@ pub struct SearchConfig {
     pub max_connections: usize,
     pub search_ef: usize,
     pub construction_ef: usize,
-    pub m: usize, // For HNSW
-    pub ef_construction: usize, // For HNSW
-    pub num_hashes: usize, // For LSH
-    pub num_buckets: usize, // For LSH
-    pub dimension: Option<usize>, // Vector dimension
-    pub num_subspaces: Option<usize>, // For PQ
+    pub m: usize,                          // For HNSW
+    pub ef_construction: usize,            // For HNSW
+    pub num_hashes: usize,                 // For LSH
+    pub num_buckets: usize,                // For LSH
+    pub dimension: Option<usize>,          // Vector dimension
+    pub num_subspaces: Option<usize>,      // For PQ
     pub codes_per_subspace: Option<usize>, // For PQ
 }
 
@@ -122,4 +122,3 @@ impl Default for SearchStats {
         }
     }
 }
-

@@ -1,9 +1,11 @@
-use pyo3::prelude::*;
-use vectradb_components::{VectorDocument, VectraDBError, SimilarityResult, DatabaseStats, VectorDatabase};
-use vectradb_storage::{PersistentVectorDB, DatabaseConfig};
-use vectradb_search::SearchAlgorithm;
 use ndarray::Array1;
+use pyo3::prelude::*;
 use std::collections::HashMap;
+use vectradb_components::{
+    DatabaseStats, SimilarityResult, VectorDatabase, VectorDocument, VectraDBError,
+};
+use vectradb_search::SearchAlgorithm;
+use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 /// Python wrapper for VectraDB
 #[pyclass]
@@ -18,7 +20,10 @@ impl VectraDB {
     pub fn new(data_dir: Option<String>, search_algorithm: Option<String>) -> PyResult<Self> {
         let config = DatabaseConfig {
             data_dir: data_dir.unwrap_or_else(|| "./vectradb_data".to_string()),
-            search_algorithm: match search_algorithm.unwrap_or_else(|| "hnsw".to_string()).as_str() {
+            search_algorithm: match search_algorithm
+                .unwrap_or_else(|| "hnsw".to_string())
+                .as_str()
+            {
                 "hnsw" => SearchAlgorithm::HNSW,
                 "lsh" => SearchAlgorithm::LSH,
                 "pq" => SearchAlgorithm::PQ,
@@ -32,7 +37,8 @@ impl VectraDB {
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        let db = rt.block_on(PersistentVectorDB::new(config))
+        let db = rt
+            .block_on(PersistentVectorDB::new(config))
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
         Ok(Self { db })
@@ -46,16 +52,19 @@ impl VectraDB {
         tags: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
         let array_vector = Array1::from_vec(vector);
-        self.db.create_vector(id, array_vector, tags)
+        self.db
+            .create_vector(id, array_vector, tags)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         Ok(())
     }
 
     /// Get a vector by ID
     pub fn get_vector(&self, id: &str) -> PyResult<PyVectorDocument> {
-        let document = self.db.get_vector(id)
+        let document = self
+            .db
+            .get_vector(id)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyKeyError, _>(e.to_string()))?;
-        
+
         Ok(PyVectorDocument::from(document))
     }
 
@@ -67,14 +76,16 @@ impl VectraDB {
         tags: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
         let array_vector = Array1::from_vec(vector);
-        self.db.update_vector(id, array_vector, tags)
+        self.db
+            .update_vector(id, array_vector, tags)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         Ok(())
     }
 
     /// Delete a vector by ID
     pub fn delete_vector(&mut self, id: &str) -> PyResult<()> {
-        self.db.delete_vector(id)
+        self.db
+            .delete_vector(id)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyKeyError, _>(e.to_string()))?;
         Ok(())
     }
@@ -87,38 +98,46 @@ impl VectraDB {
         tags: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
         let array_vector = Array1::from_vec(vector);
-        self.db.upsert_vector(id, array_vector, tags)
+        self.db
+            .upsert_vector(id, array_vector, tags)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         Ok(())
     }
 
     /// Search for similar vectors
-    pub fn search_similar(&self, query_vector: Vec<f32>, top_k: Option<usize>) -> PyResult<Vec<PySimilarityResult>> {
+    pub fn search_similar(
+        &self,
+        query_vector: Vec<f32>,
+        top_k: Option<usize>,
+    ) -> PyResult<Vec<PySimilarityResult>> {
         let array_query = Array1::from_vec(query_vector);
         let top_k = top_k.unwrap_or(10);
-        
-        let results = self.db.search_similar(array_query, top_k)
+
+        let results = self
+            .db
+            .search_similar(array_query, top_k)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        
-        let py_results: Vec<PySimilarityResult> = results
-            .into_iter()
-            .map(PySimilarityResult::from)
-            .collect();
-        
+
+        let py_results: Vec<PySimilarityResult> =
+            results.into_iter().map(PySimilarityResult::from).collect();
+
         Ok(py_results)
     }
 
     /// List all vector IDs
     pub fn list_vectors(&self) -> PyResult<Vec<String>> {
-        self.db.list_vectors()
+        self.db
+            .list_vectors()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 
     /// Get database statistics
     pub fn get_stats(&self) -> PyResult<PyDatabaseStats> {
-        let stats = self.db.get_stats()
+        let stats = self
+            .db
+            .get_stats()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
+
         Ok(PyDatabaseStats::from(stats))
     }
 }
@@ -205,10 +224,10 @@ fn vectradb_py(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyVectorDocument>()?;
     m.add_class::<PySimilarityResult>()?;
     m.add_class::<PyDatabaseStats>()?;
-    
+
     // Add version info
     m.add("__version__", "0.1.0")?;
-    
+
     Ok(())
 }
 
@@ -228,7 +247,7 @@ mod tests {
             },
             data: Array1::from_vec(vec![1.0, 2.0, 3.0]),
         };
-        
+
         let py_doc = PyVectorDocument::from(doc);
         assert_eq!(py_doc.id, "test");
         assert_eq!(py_doc.dimension, 3);

@@ -1,8 +1,8 @@
-use crate::{VectorDatabase, VectorDocument, VectorMetadata, VectraDBError, DatabaseStats};
+use crate::{DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata, VectraDBError};
 use ndarray::Array1;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// In-memory storage implementation for the vector database
 pub struct InMemoryVectorDB {
@@ -31,12 +31,12 @@ impl InMemoryVectorDB {
     fn calculate_memory_usage(&self) -> u64 {
         let vectors = self.vectors.read().unwrap();
         let mut total_size = 0;
-        
+
         for (id, doc) in vectors.iter() {
             total_size += id.len() + doc.data.len() * 4; // 4 bytes per f32
             total_size += doc.metadata.tags.len() * 16; // Rough estimate for tags
         }
-        
+
         total_size as u64
     }
 }
@@ -48,7 +48,12 @@ impl Default for InMemoryVectorDB {
 }
 
 impl VectorDatabase for InMemoryVectorDB {
-    fn create_vector(&mut self, id: String, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError> {
+    fn create_vector(
+        &mut self,
+        id: String,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError> {
         // Check dimension consistency if dimension is fixed
         if let Some(expected_dim) = self.dimension {
             if vector.len() != expected_dim {
@@ -63,24 +68,30 @@ impl VectorDatabase for InMemoryVectorDB {
         }
 
         let doc = crate::vector_operations::create_vector_document(id.clone(), vector, tags)?;
-        
+
         let mut vectors = self.vectors.write().unwrap();
         if vectors.contains_key(&id) {
             return Err(VectraDBError::VectorNotFound { id }); // Vector already exists
         }
-        
+
         vectors.insert(id, doc);
         Ok(())
     }
 
     fn get_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError> {
         let vectors = self.vectors.read().unwrap();
-        vectors.get(id)
+        vectors
+            .get(id)
             .cloned()
             .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })
     }
 
-    fn update_vector(&mut self, id: &str, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError> {
+    fn update_vector(
+        &mut self,
+        id: &str,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError> {
         // Check dimension consistency
         if let Some(expected_dim) = self.dimension {
             if vector.len() != expected_dim {
@@ -92,22 +103,30 @@ impl VectorDatabase for InMemoryVectorDB {
         }
 
         let mut vectors = self.vectors.write().unwrap();
-        let doc = vectors.get_mut(id)
+        let doc = vectors
+            .get_mut(id)
             .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })?;
 
-        let updated_doc = crate::vector_operations::update_vector_document(doc.clone(), vector, tags)?;
+        let updated_doc =
+            crate::vector_operations::update_vector_document(doc.clone(), vector, tags)?;
         *doc = updated_doc;
         Ok(())
     }
 
     fn delete_vector(&mut self, id: &str) -> Result<(), VectraDBError> {
         let mut vectors = self.vectors.write().unwrap();
-        vectors.remove(id)
+        vectors
+            .remove(id)
             .map(|_| ())
             .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })
     }
 
-    fn upsert_vector(&mut self, id: String, vector: Array1<f32>, tags: Option<HashMap<String, String>>) -> Result<(), VectraDBError> {
+    fn upsert_vector(
+        &mut self,
+        id: String,
+        vector: Array1<f32>,
+        tags: Option<HashMap<String, String>>,
+    ) -> Result<(), VectraDBError> {
         // Check dimension consistency
         if let Some(expected_dim) = self.dimension {
             if vector.len() != expected_dim {
@@ -122,25 +141,30 @@ impl VectorDatabase for InMemoryVectorDB {
         }
 
         let mut vectors = self.vectors.write().unwrap();
-        
+
         if vectors.contains_key(&id) {
             // Update existing vector
             let doc = vectors.get_mut(&id).unwrap();
-            let updated_doc = crate::vector_operations::update_vector_document(doc.clone(), vector, tags)?;
+            let updated_doc =
+                crate::vector_operations::update_vector_document(doc.clone(), vector, tags)?;
             *doc = updated_doc;
         } else {
             // Create new vector
             let doc = crate::vector_operations::create_vector_document(id.clone(), vector, tags)?;
             vectors.insert(id, doc);
         }
-        
+
         Ok(())
     }
 
-    fn search_similar(&self, query_vector: Array1<f32>, top_k: usize) -> Result<Vec<crate::SimilarityResult>, VectraDBError> {
+    fn search_similar(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+    ) -> Result<Vec<crate::SimilarityResult>, VectraDBError> {
         let vectors = self.vectors.read().unwrap();
         let documents: Vec<VectorDocument> = vectors.values().cloned().collect();
-        
+
         crate::similarity::find_similar_vectors_cosine(&query_vector.view(), &documents, top_k)
     }
 
@@ -202,8 +226,10 @@ mod tests {
     fn test_in_memory_db_creation() {
         let mut db = InMemoryVectorDB::new();
         let vector = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        
-        assert!(db.create_vector("test_id".to_string(), vector, None).is_ok());
+
+        assert!(db
+            .create_vector("test_id".to_string(), vector, None)
+            .is_ok());
         assert!(db.get_vector("test_id").is_ok());
     }
 
@@ -211,8 +237,10 @@ mod tests {
     fn test_in_memory_db_dimension_check() {
         let mut db = InMemoryVectorDB::with_dimension(3);
         let vector = Array1::from_vec(vec![1.0, 2.0]); // Wrong dimension
-        
-        assert!(db.create_vector("test_id".to_string(), vector, None).is_err());
+
+        assert!(db
+            .create_vector("test_id".to_string(), vector, None)
+            .is_err());
     }
 
     #[test]
@@ -220,13 +248,17 @@ mod tests {
         let mut db = InMemoryVectorDB::new();
         let vector1 = Array1::from_vec(vec![1.0, 2.0, 3.0]);
         let vector2 = Array1::from_vec(vec![4.0, 5.0, 6.0]);
-        
+
         // First upsert should create
-        assert!(db.upsert_vector("test_id".to_string(), vector1, None).is_ok());
-        
+        assert!(db
+            .upsert_vector("test_id".to_string(), vector1, None)
+            .is_ok());
+
         // Second upsert should update
-        assert!(db.upsert_vector("test_id".to_string(), vector2, None).is_ok());
-        
+        assert!(db
+            .upsert_vector("test_id".to_string(), vector2, None)
+            .is_ok());
+
         let doc = db.get_vector("test_id").unwrap();
         assert_eq!(doc.data[0], 4.0);
     }
@@ -235,13 +267,13 @@ mod tests {
     fn test_in_memory_db_stats() {
         let mut db = InMemoryVectorDB::new();
         let vector = Array1::from_vec(vec![1.0, 2.0, 3.0]);
-        
-        db.create_vector("test_id".to_string(), vector, None).unwrap();
+
+        db.create_vector("test_id".to_string(), vector, None)
+            .unwrap();
         let stats = db.get_stats().unwrap();
-        
+
         assert_eq!(stats.total_vectors, 1);
         assert_eq!(stats.dimension, 3);
         assert!(stats.memory_usage > 0);
     }
 }
-

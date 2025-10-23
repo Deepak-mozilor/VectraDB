@@ -1,9 +1,9 @@
-use tonic::{Request, Response, Status};
-use vectradb_storage::PersistentVectorDB;
-use vectradb_components::VectorDatabase;
 use ndarray::Array1;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tonic::{Request, Response, Status};
+use vectradb_components::VectorDatabase;
+use vectradb_storage::PersistentVectorDB;
 
 // Include generated proto code
 pub mod vectradb {
@@ -12,11 +12,10 @@ pub mod vectradb {
 
 use vectradb::{
     vectra_db_server::{VectraDb, VectraDbServer},
-    CreateVectorRequest, VectorResponse, GetVectorRequest, UpdateVectorRequest,
-    DeleteVectorRequest, DeleteVectorResponse, UpsertVectorRequest, SearchRequest,
-    SearchResponse, ListVectorsRequest, ListVectorsResponse, GetStatsRequest,
-    StatsResponse, HealthCheckRequest, HealthCheckResponse, SimilarityResult,
-    VectorMetadata,
+    CreateVectorRequest, DeleteVectorRequest, DeleteVectorResponse, GetStatsRequest,
+    GetVectorRequest, HealthCheckRequest, HealthCheckResponse, ListVectorsRequest,
+    ListVectorsResponse, SearchRequest, SearchResponse, SimilarityResult, StatsResponse,
+    UpdateVectorRequest, UpsertVectorRequest, VectorMetadata, VectorResponse,
 };
 
 pub struct VectraDbService {
@@ -52,7 +51,8 @@ impl VectraDb for VectraDbService {
             .map_err(|e| Status::internal(e.to_string()))?;
 
         // Fetch created vector
-        let document = db.get_vector(&req.id)
+        let document = db
+            .get_vector(&req.id)
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(VectorResponse {
@@ -71,8 +71,9 @@ impl VectraDb for VectraDbService {
     ) -> Result<Response<VectorResponse>, Status> {
         let req = request.into_inner();
         let db = self.db.read().await;
-        
-        let document = db.get_vector(&req.id)
+
+        let document = db
+            .get_vector(&req.id)
             .map_err(|e| Status::not_found(e.to_string()))?;
 
         Ok(Response::new(VectorResponse {
@@ -101,7 +102,8 @@ impl VectraDb for VectraDbService {
         db.update_vector(&req.id, vector, tags)
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let document = db.get_vector(&req.id)
+        let document = db
+            .get_vector(&req.id)
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(VectorResponse {
@@ -120,7 +122,7 @@ impl VectraDb for VectraDbService {
     ) -> Result<Response<DeleteVectorResponse>, Status> {
         let req = request.into_inner();
         let mut db = self.db.write().await;
-        
+
         db.delete_vector(&req.id)
             .map_err(|e| Status::internal(e.to_string()))?;
 
@@ -143,7 +145,8 @@ impl VectraDb for VectraDbService {
         db.upsert_vector(req.id.clone(), vector, tags)
             .map_err(|e| Status::internal(e.to_string()))?;
 
-        let document = db.get_vector(&req.id)
+        let document = db
+            .get_vector(&req.id)
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(VectorResponse {
@@ -167,7 +170,8 @@ impl VectraDb for VectraDbService {
         let start_time = std::time::Instant::now();
         let db = self.db.read().await;
 
-        let results = db.search_similar(vector, top_k)
+        let results = db
+            .search_similar(vector, top_k)
             .map_err(|e| Status::internal(e.to_string()))?;
 
         let total_time_ms = start_time.elapsed().as_secs_f64() * 1000.0;
@@ -198,7 +202,8 @@ impl VectraDb for VectraDbService {
         _request: Request<ListVectorsRequest>,
     ) -> Result<Response<ListVectorsResponse>, Status> {
         let db = self.db.read().await;
-        let ids = db.list_vectors()
+        let ids = db
+            .list_vectors()
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(ListVectorsResponse { ids }))
@@ -209,7 +214,8 @@ impl VectraDb for VectraDbService {
         _request: Request<GetStatsRequest>,
     ) -> Result<Response<StatsResponse>, Status> {
         let db = self.db.read().await;
-        let stats = db.get_stats()
+        let stats = db
+            .get_stats()
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(StatsResponse {

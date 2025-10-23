@@ -1,18 +1,18 @@
-use vectradb_components::{VectorDatabase, VectraDBError, SimilarityResult, DatabaseStats};
-use vectradb_storage::{PersistentVectorDB, DatabaseConfig};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::Json,
+    routing::{delete, get, post, put},
+    Router,
+};
 use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::Json,
-    routing::{get, post, delete, put},
-    Router,
-};
 use tower_http::cors::CorsLayer;
+use vectradb_components::{DatabaseStats, SimilarityResult, VectorDatabase, VectraDBError};
+use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 /// API server state
 #[derive(Clone)]
@@ -116,7 +116,7 @@ async fn create_vector(
     Json(request): Json<CreateVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
     let vector = Array1::from_vec(request.vector);
-    
+
     let mut db = state.db.write().await;
     match db.create_vector(request.id.clone(), vector, request.tags) {
         Ok(_) => {
@@ -188,7 +188,7 @@ async fn update_vector(
     Json(request): Json<UpdateVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
     let vector = Array1::from_vec(request.vector);
-    
+
     let mut db = state.db.write().await;
     match db.update_vector(&id, vector, request.tags) {
         Ok(_) => {
@@ -260,7 +260,7 @@ async fn upsert_vector(
     Json(request): Json<UpsertVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
     let vector = Array1::from_vec(request.vector);
-    
+
     let mut db = state.db.write().await;
     match db.upsert_vector(id.clone(), vector, request.tags) {
         Ok(_) => {
@@ -300,10 +300,10 @@ async fn search_vectors(
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
     let vector = Array1::from_vec(request.vector);
     let top_k = request.top_k.unwrap_or(10);
-    
+
     let start_time = std::time::Instant::now();
     let db = state.db.read().await;
-    
+
     match db.search_similar(vector, top_k) {
         Ok(results) => {
             let total_time = start_time.elapsed().as_secs_f64() * 1000.0; // Convert to milliseconds
@@ -340,7 +340,10 @@ async fn list_vectors(
 }
 
 /// Start the API server
-pub async fn start_server(config: DatabaseConfig, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_server(
+    config: DatabaseConfig,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Initialize database
     let db = PersistentVectorDB::new(config).await?;
     let state = AppState {
@@ -353,7 +356,7 @@ pub async fn start_server(config: DatabaseConfig, port: u16) -> Result<(), Box<d
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     println!("VectraDB API server running on http://0.0.0.0:{}", port);
-    
+
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -368,9 +371,12 @@ mod tests {
         let request = CreateVectorRequest {
             id: "test_id".to_string(),
             vector: vec![1.0, 2.0, 3.0],
-            tags: Some(HashMap::from([("category".to_string(), "test".to_string())])),
+            tags: Some(HashMap::from([(
+                "category".to_string(),
+                "test".to_string(),
+            )])),
         };
-        
+
         assert_eq!(request.id, "test_id");
         assert_eq!(request.vector.len(), 3);
     }
@@ -381,9 +387,8 @@ mod tests {
             vector: vec![1.0, 2.0, 3.0],
             top_k: Some(5),
         };
-        
+
         assert_eq!(request.vector.len(), 3);
         assert_eq!(request.top_k, Some(5));
     }
 }
-

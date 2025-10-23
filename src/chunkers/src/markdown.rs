@@ -1,6 +1,6 @@
 use crate::{Chunk, ChunkType, Chunker, ChunkingConfig};
 use anyhow::Result;
-use pulldown_cmark::{Parser, Event, Tag, TagEnd};
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -35,7 +35,7 @@ impl MarkdownChunker {
 
         for (i, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             // Check if this is a heading
             if self.heading_regex.is_match(trimmed) {
                 // Save previous section if it exists
@@ -46,11 +46,16 @@ impl MarkdownChunker {
                         start_index: start_line,
                         end_index: i,
                         chunk_type: ChunkType::Markdown,
-                        metadata: self.create_markdown_metadata(&section_content, start_line, "section", current_heading.as_deref()),
+                        metadata: self.create_markdown_metadata(
+                            &section_content,
+                            start_line,
+                            "section",
+                            current_heading.as_deref(),
+                        ),
                     });
                     current_section.clear();
                 }
-                
+
                 // Start new section
                 current_heading = Some(trimmed.to_string());
                 current_level = trimmed.matches('#').count();
@@ -58,7 +63,7 @@ impl MarkdownChunker {
                 current_section.push(line.to_string());
             } else {
                 current_section.push(line.to_string());
-                
+
                 // Check if section is getting too large
                 if current_section.join("\n").len() > config.max_chunk_size {
                     let section_content = current_section.join("\n");
@@ -67,7 +72,12 @@ impl MarkdownChunker {
                         start_index: start_line,
                         end_index: i,
                         chunk_type: ChunkType::Markdown,
-                        metadata: self.create_markdown_metadata(&section_content, start_line, "section", current_heading.as_deref()),
+                        metadata: self.create_markdown_metadata(
+                            &section_content,
+                            start_line,
+                            "section",
+                            current_heading.as_deref(),
+                        ),
                     });
                     current_section.clear();
                     start_line = i;
@@ -83,7 +93,12 @@ impl MarkdownChunker {
                 start_index: start_line,
                 end_index: lines.len(),
                 chunk_type: ChunkType::Markdown,
-                metadata: self.create_markdown_metadata(&section_content, start_line, "section", current_heading.as_deref()),
+                metadata: self.create_markdown_metadata(
+                    &section_content,
+                    start_line,
+                    "section",
+                    current_heading.as_deref(),
+                ),
             });
         }
 
@@ -100,7 +115,7 @@ impl MarkdownChunker {
 
         for (i, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             // Determine block type
             let block_type = if self.heading_regex.is_match(trimmed) {
                 "heading"
@@ -119,14 +134,22 @@ impl MarkdownChunker {
             };
 
             // If block type changed, save previous block
-            if block_type != current_block_type && !current_block.is_empty() && current_block_type != "empty" {
+            if block_type != current_block_type
+                && !current_block.is_empty()
+                && current_block_type != "empty"
+            {
                 let block_content = current_block.join("\n");
                 chunks.push(Chunk {
                     content: block_content.clone(),
                     start_index: start_line,
                     end_index: i,
                     chunk_type: ChunkType::Markdown,
-                    metadata: self.create_markdown_metadata(&block_content, start_line, current_block_type, None),
+                    metadata: self.create_markdown_metadata(
+                        &block_content,
+                        start_line,
+                        current_block_type,
+                        None,
+                    ),
                 });
                 current_block.clear();
                 start_line = i;
@@ -143,7 +166,12 @@ impl MarkdownChunker {
                     start_index: start_line,
                     end_index: i,
                     chunk_type: ChunkType::Markdown,
-                    metadata: self.create_markdown_metadata(&block_content, start_line, current_block_type, None),
+                    metadata: self.create_markdown_metadata(
+                        &block_content,
+                        start_line,
+                        current_block_type,
+                        None,
+                    ),
                 });
                 current_block.clear();
                 start_line = i;
@@ -158,7 +186,12 @@ impl MarkdownChunker {
                 start_index: start_line,
                 end_index: lines.len(),
                 chunk_type: ChunkType::Markdown,
-                metadata: self.create_markdown_metadata(&block_content, start_line, current_block_type, None),
+                metadata: self.create_markdown_metadata(
+                    &block_content,
+                    start_line,
+                    current_block_type,
+                    None,
+                ),
             });
         }
 
@@ -177,7 +210,12 @@ impl MarkdownChunker {
 
         for event in parser {
             match event {
-                Event::Start(Tag::Heading { level, id: _, classes: _, attrs: _ }) => {
+                Event::Start(Tag::Heading {
+                    level,
+                    id: _,
+                    classes: _,
+                    attrs: _,
+                }) => {
                     // Save previous chunk if it exists
                     if !current_chunk.is_empty() {
                         chunks.push(Chunk {
@@ -185,7 +223,12 @@ impl MarkdownChunker {
                             start_index: chunk_start,
                             end_index: chunk_start + current_chunk.len(),
                             chunk_type: ChunkType::Markdown,
-                            metadata: self.create_markdown_metadata(&current_chunk, chunk_start, "section", current_heading.as_deref()),
+                            metadata: self.create_markdown_metadata(
+                                &current_chunk,
+                                chunk_start,
+                                "section",
+                                current_heading.as_deref(),
+                            ),
                         });
                         current_chunk.clear();
                     }
@@ -200,7 +243,9 @@ impl MarkdownChunker {
                 Event::Start(Tag::CodeBlock(lang)) => {
                     in_code_block = true;
                     let lang_str = match &lang {
-                        pulldown_cmark::CodeBlockKind::Fenced(lang_name) => lang_name.as_ref().to_string(),
+                        pulldown_cmark::CodeBlockKind::Fenced(lang_name) => {
+                            lang_name.as_ref().to_string()
+                        }
                         pulldown_cmark::CodeBlockKind::Indented => String::new(),
                     };
                     code_language = Some(lang_str.clone());
@@ -225,7 +270,12 @@ impl MarkdownChunker {
                         current_chunk.push('\n');
                     }
                 }
-                Event::Start(Tag::Heading { level: _, id: _, classes: _, attrs: _ }) => {
+                Event::Start(Tag::Heading {
+                    level: _,
+                    id: _,
+                    classes: _,
+                    attrs: _,
+                }) => {
                     if let Some(heading) = self.extract_heading_text(&current_chunk) {
                         current_heading = Some(heading);
                     }
@@ -243,7 +293,12 @@ impl MarkdownChunker {
                     start_index: chunk_start,
                     end_index: chunk_start + current_chunk.len(),
                     chunk_type: ChunkType::Markdown,
-                    metadata: self.create_markdown_metadata(&current_chunk, chunk_start, "section", current_heading.as_deref()),
+                    metadata: self.create_markdown_metadata(
+                        &current_chunk,
+                        chunk_start,
+                        "section",
+                        current_heading.as_deref(),
+                    ),
                 });
                 chunk_start += current_chunk.len();
                 current_chunk.clear();
@@ -257,7 +312,12 @@ impl MarkdownChunker {
                 start_index: chunk_start,
                 end_index: chunk_start + current_chunk.len(),
                 chunk_type: ChunkType::Markdown,
-                metadata: self.create_markdown_metadata(&current_chunk, chunk_start, "section", current_heading.as_deref()),
+                metadata: self.create_markdown_metadata(
+                    &current_chunk,
+                    chunk_start,
+                    "section",
+                    current_heading.as_deref(),
+                ),
             });
         }
 
@@ -275,32 +335,47 @@ impl MarkdownChunker {
     }
 
     /// Creates metadata for a markdown chunk
-    fn create_markdown_metadata(&self, content: &str, start_line: usize, block_type: &str, heading: Option<&str>) -> HashMap<String, String> {
+    fn create_markdown_metadata(
+        &self,
+        content: &str,
+        start_line: usize,
+        block_type: &str,
+        heading: Option<&str>,
+    ) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
-        
+
         // Basic metrics
         let lines: Vec<&str> = content.lines().collect();
         let line_count = lines.len();
         let char_count = content.len();
-        
+
         // Count markdown elements
-        let heading_count = lines.iter().filter(|line| self.heading_regex.is_match(line.trim())).count();
+        let heading_count = lines
+            .iter()
+            .filter(|line| self.heading_regex.is_match(line.trim()))
+            .count();
         let code_block_count = self.code_block_regex.find_iter(content).count();
-        let list_count = lines.iter().filter(|line| self.list_regex.is_match(line)).count();
+        let list_count = lines
+            .iter()
+            .filter(|line| self.list_regex.is_match(line))
+            .count();
         let link_count = self.link_regex.find_iter(content).count();
         let image_count = self.image_regex.find_iter(content).count();
-        
+
         // Count different types of content
-        let text_lines = lines.iter().filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && 
-            !self.heading_regex.is_match(trimmed) && 
-            !self.list_regex.is_match(line) &&
-            !trimmed.starts_with("```")
-        }).count();
-        
+        let text_lines = lines
+            .iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty()
+                    && !self.heading_regex.is_match(trimmed)
+                    && !self.list_regex.is_match(line)
+                    && !trimmed.starts_with("```")
+            })
+            .count();
+
         let empty_lines = lines.iter().filter(|line| line.trim().is_empty()).count();
-        
+
         metadata.insert("block_type".to_string(), block_type.to_string());
         metadata.insert("line_count".to_string(), line_count.to_string());
         metadata.insert("char_count".to_string(), char_count.to_string());
@@ -313,18 +388,21 @@ impl MarkdownChunker {
         metadata.insert("image_count".to_string(), image_count.to_string());
         metadata.insert("start_line".to_string(), start_line.to_string());
         metadata.insert("chunking_method".to_string(), "markdown".to_string());
-        
+
         if let Some(heading) = heading {
             metadata.insert("heading".to_string(), heading.to_string());
         }
-        
+
         // Calculate content density
         let content_density = if line_count > 0 {
             text_lines as f64 / line_count as f64
         } else {
             0.0
         };
-        metadata.insert("content_density".to_string(), format!("{:.2}", content_density));
+        metadata.insert(
+            "content_density".to_string(),
+            format!("{:.2}", content_density),
+        );
 
         metadata
     }
@@ -336,33 +414,34 @@ impl MarkdownChunker {
         }
 
         let mut overlapped_chunks = Vec::new();
-        
+
         for (i, chunk) in chunks.iter().enumerate() {
             let mut overlapped_chunk = chunk.clone();
-            
+
             // Add overlap from previous chunk (if it's a related section)
             if i > 0 {
                 let prev_chunk = &chunks[i - 1];
                 if let (Some(prev_heading), Some(curr_heading)) = (
                     prev_chunk.metadata.get("heading"),
-                    chunk.metadata.get("heading")
+                    chunk.metadata.get("heading"),
                 ) {
                     // Only add overlap for related sections or if headings are similar
-                    if prev_heading == curr_heading || 
-                       prev_heading.contains(curr_heading) || 
-                       curr_heading.contains(prev_heading) {
-                        
-                        let overlap_text = &prev_chunk.content[
-                            std::cmp::max(0, prev_chunk.content.len().saturating_sub(config.overlap_size))..
-                        ];
+                    if prev_heading == curr_heading
+                        || prev_heading.contains(curr_heading)
+                        || curr_heading.contains(prev_heading)
+                    {
+                        let overlap_text = &prev_chunk.content[std::cmp::max(
+                            0,
+                            prev_chunk.content.len().saturating_sub(config.overlap_size),
+                        )..];
                         overlapped_chunk.content = format!("{}\n{}", overlap_text, chunk.content);
                     }
                 }
             }
-            
+
             overlapped_chunks.push(overlapped_chunk);
         }
-        
+
         overlapped_chunks
     }
 }
@@ -372,7 +451,7 @@ impl Chunker for MarkdownChunker {
         let chunks = if config.preserve_semantics {
             // Try heading-based chunking first
             let heading_chunks = self.chunk_by_headings(text, config);
-            
+
             // If no headings found, use semantic block chunking
             if heading_chunks.is_empty() || heading_chunks.len() == 1 {
                 self.chunk_by_semantic_blocks(text, config)
@@ -385,10 +464,10 @@ impl Chunker for MarkdownChunker {
             let mut chunks = Vec::new();
             let mut current_chunk = Vec::<String>::new();
             let mut start_line = 0;
-            
+
             for (i, line) in lines.iter().enumerate() {
                 current_chunk.push(line.to_string());
-                
+
                 if current_chunk.join("\n").len() > config.max_chunk_size {
                     let chunk_content = current_chunk.join("\n");
                     chunks.push(Chunk {
@@ -396,13 +475,18 @@ impl Chunker for MarkdownChunker {
                         start_index: start_line,
                         end_index: i,
                         chunk_type: ChunkType::Markdown,
-                        metadata: self.create_markdown_metadata(&chunk_content, start_line, "mixed", None),
+                        metadata: self.create_markdown_metadata(
+                            &chunk_content,
+                            start_line,
+                            "mixed",
+                            None,
+                        ),
                     });
                     current_chunk.clear();
                     start_line = i;
                 }
             }
-            
+
             // Add remaining lines
             if !current_chunk.is_empty() {
                 let chunk_content = current_chunk.join("\n");
@@ -411,10 +495,15 @@ impl Chunker for MarkdownChunker {
                     start_index: start_line,
                     end_index: lines.len(),
                     chunk_type: ChunkType::Markdown,
-                    metadata: self.create_markdown_metadata(&chunk_content, start_line, "mixed", None),
+                    metadata: self.create_markdown_metadata(
+                        &chunk_content,
+                        start_line,
+                        "mixed",
+                        None,
+                    ),
                 });
             }
-            
+
             chunks
         };
 
@@ -446,10 +535,10 @@ mod tests {
             include_metadata: true,
             custom_delimiters: None,
         };
-        
+
         let markdown = "# Title\n\nContent here.\n\n## Subtitle\n\nMore content.";
         let chunks = chunker.chunk(markdown, &config).unwrap();
-        
+
         assert!(!chunks.is_empty());
         assert!(chunks.len() >= 2); // Should have at least 2 chunks for 2 headings
     }
@@ -464,10 +553,10 @@ mod tests {
             include_metadata: true,
             custom_delimiters: None,
         };
-        
+
         let markdown = "## Heading\n\nThis is a paragraph.\n\n```\ncode block\n```";
         let chunks = chunker.chunk(markdown, &config).unwrap();
-        
+
         assert!(!chunks.is_empty());
         assert!(chunks.len() >= 1);
     }
@@ -477,7 +566,7 @@ mod tests {
         let chunker = MarkdownChunker::new();
         let content = "# Heading\n\nThis is content.\n\n- List item";
         let metadata = chunker.create_markdown_metadata(content, 0, "section", Some("Heading"));
-        
+
         assert!(metadata.contains_key("heading_count"));
         assert!(metadata.contains_key("list_count"));
         assert_eq!(metadata.get("heading").unwrap(), "Heading");
@@ -488,10 +577,15 @@ mod tests {
     #[test]
     fn test_extract_heading_text() {
         let chunker = MarkdownChunker::new();
-        
-        assert_eq!(chunker.extract_heading_text("# Main Title"), Some("Main Title".to_string()));
-        assert_eq!(chunker.extract_heading_text("## Sub Title"), Some("Sub Title".to_string()));
+
+        assert_eq!(
+            chunker.extract_heading_text("# Main Title"),
+            Some("Main Title".to_string())
+        );
+        assert_eq!(
+            chunker.extract_heading_text("## Sub Title"),
+            Some("Sub Title".to_string())
+        );
         assert_eq!(chunker.extract_heading_text("No heading here"), None);
     }
 }
-

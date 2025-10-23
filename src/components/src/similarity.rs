@@ -50,7 +50,10 @@ pub fn manhattan_distance(a: &ArrayView1<f32>, b: &ArrayView1<f32>) -> Result<f3
 }
 
 /// Calculate dot product similarity
-pub fn dot_product_similarity(a: &ArrayView1<f32>, b: &ArrayView1<f32>) -> Result<f32, VectraDBError> {
+pub fn dot_product_similarity(
+    a: &ArrayView1<f32>,
+    b: &ArrayView1<f32>,
+) -> Result<f32, VectraDBError> {
     if a.len() != b.len() {
         return Err(VectraDBError::DimensionMismatch {
             expected: a.len(),
@@ -82,10 +85,10 @@ pub fn find_similar_vectors_cosine(
 
     // Sort by similarity score (descending)
     results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-    
+
     // Take top-k results
     results.truncate(top_k);
-    
+
     Ok(results)
 }
 
@@ -114,10 +117,10 @@ pub fn find_similar_vectors_euclidean(
 
     // Sort by similarity score (descending)
     results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-    
+
     // Take top-k results
     results.truncate(top_k);
-    
+
     Ok(results)
 }
 
@@ -161,8 +164,12 @@ pub fn batch_similarity_search(
         .iter()
         .map(|query_vector| {
             match similarity_type {
-                SimilarityType::Cosine => find_similar_vectors_cosine(query_vector, documents, top_k),
-                SimilarityType::Euclidean => find_similar_vectors_euclidean(query_vector, documents, top_k),
+                SimilarityType::Cosine => {
+                    find_similar_vectors_cosine(query_vector, documents, top_k)
+                }
+                SimilarityType::Euclidean => {
+                    find_similar_vectors_euclidean(query_vector, documents, top_k)
+                }
                 _ => Err(VectraDBError::InvalidVector), // Not implemented yet
             }
         })
@@ -180,10 +187,10 @@ mod tests {
         let a = Array1::from_vec(vec![1.0, 0.0, 0.0]);
         let b = Array1::from_vec(vec![1.0, 0.0, 0.0]);
         let c = Array1::from_vec(vec![0.0, 1.0, 0.0]);
-        
+
         let sim_aa = cosine_similarity(&a.view(), &b.view()).unwrap();
         let sim_ac = cosine_similarity(&a.view(), &c.view()).unwrap();
-        
+
         assert!((sim_aa - 1.0).abs() < 1e-6);
         assert!((sim_ac - 0.0).abs() < 1e-6);
     }
@@ -192,7 +199,7 @@ mod tests {
     fn test_euclidean_distance() {
         let a = Array1::from_vec(vec![0.0, 0.0]);
         let b = Array1::from_vec(vec![3.0, 4.0]);
-        
+
         let distance = euclidean_distance(&a.view(), &b.view()).unwrap();
         assert!((distance - 5.0).abs() < 1e-6);
     }
@@ -200,16 +207,18 @@ mod tests {
     #[test]
     fn test_find_similar_vectors() {
         let docs = vec![
-            create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None).unwrap(),
-            create_vector_document("2".to_string(), Array1::from_vec(vec![0.0, 1.0, 0.0]), None).unwrap(),
-            create_vector_document("3".to_string(), Array1::from_vec(vec![1.0, 1.0, 0.0]), None).unwrap(),
+            create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None)
+                .unwrap(),
+            create_vector_document("2".to_string(), Array1::from_vec(vec![0.0, 1.0, 0.0]), None)
+                .unwrap(),
+            create_vector_document("3".to_string(), Array1::from_vec(vec![1.0, 1.0, 0.0]), None)
+                .unwrap(),
         ];
-        
+
         let query = Array1::from_vec(vec![1.0, 0.0, 0.0]);
         let results = find_similar_vectors_cosine(&query.view(), &docs, 2).unwrap();
-        
+
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "1"); // Most similar
     }
 }
-
