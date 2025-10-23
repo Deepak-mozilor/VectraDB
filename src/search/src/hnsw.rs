@@ -115,6 +115,8 @@ impl HNSWIndex {
             }
         }
 
+        // Sort results by distance (ascending)
+        results.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         results
     }
 
@@ -220,7 +222,10 @@ impl AdvancedSearch for HNSWIndex {
 
         if let Some(entry) = self.entry_point {
             let entry_points = vec![entry];
-            let candidates = self.search_layer(query, entry_points, k * 2, 0);
+            let mut candidates = self.search_layer(query, entry_points, k * 2, 0);
+            
+            // Ensure results are sorted by distance (ascending)
+            candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
             let results = candidates.into_iter().take(k).collect();
 
             // Update stats
