@@ -53,4 +53,10 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+description = "Production-grade vector database in Rust"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
+
 vectradb-components = { version = "0.1.0" }
