@@ -7,6 +7,7 @@ license = "MIT"
 repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
+include = ["src/**", "proto/**", "Cargo.toml", "build.rs", "README.md"]
 
 [[bin]]
 name = "vectradb-server"

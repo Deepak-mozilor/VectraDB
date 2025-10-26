@@ -1624,7 +1624,7 @@ dependencies = [
  "tokio",
  "tower 0.4.13",
  "tower-http",
- "vectradb-components",
+ "vectradb-components 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "vectradb-search",
  "vectradb-storage",
 ]
@@ -1653,6 +1653,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "vectradb-components"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4c0aee8cab08660c8bc13dae9b2827ba0cc3141a34979f41d37d3831c7075b8"
+dependencies = [
+ "anyhow",
+ "ndarray",
+ "rand",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "vectradb-py"
 version = "0.1.0"
 dependencies = [
@@ -1663,7 +1677,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "vectradb-chunkers",
- "vectradb-components",
+ "vectradb-components 0.1.0",
  "vectradb-search",
  "vectradb-storage",
 ]
@@ -1678,7 +1692,7 @@ dependencies = [
  "rand",
  "serde",
  "thiserror",
- "vectradb-components",
+ "vectradb-components 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1694,7 +1708,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "vectradb-api",
- "vectradb-components",
+ "vectradb-components 0.1.0",
  "vectradb-search",
  "vectradb-storage",
 ]
@@ -1708,10 +1722,9 @@ dependencies = [
  "ndarray",
  "serde",
  "sled",
- "tempfile",
  "thiserror",
  "tokio",
- "vectradb-components",
+ "vectradb-components 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "vectradb-search",
 ]
 

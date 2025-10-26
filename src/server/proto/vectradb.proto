@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package vectradb;
+
+// VectraDB gRPC Service
+service VectraDb {
+  // Create a new vector
+  rpc CreateVector(CreateVectorRequest) returns (VectorResponse);
+  
+  // Get a vector by ID
+  rpc GetVector(GetVectorRequest) returns (VectorResponse);
+  
+  // Update an existing vector
+  rpc UpdateVector(UpdateVectorRequest) returns (VectorResponse);
+  
+  // Delete a vector
+  rpc DeleteVector(DeleteVectorRequest) returns (DeleteVectorResponse);
+  
+  // Upsert a vector (insert or update)
+  rpc UpsertVector(UpsertVectorRequest) returns (VectorResponse);
+  
+  // Search for similar vectors
+  rpc SearchSimilar(SearchRequest) returns (SearchResponse);
+  
+  // List all vector IDs
+  rpc ListVectors(ListVectorsRequest) returns (ListVectorsResponse);
+  
+  // Get database statistics
+  rpc GetStats(GetStatsRequest) returns (StatsResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Request/Response Messages
+
+message CreateVectorRequest {
+  string id = 1;
+  repeated float vector = 2;
+  map<string, string> tags = 3;
+}
+
+message GetVectorRequest {
+  string id = 1;
+}
+
+message UpdateVectorRequest {
+  string id = 1;
+  repeated float vector = 2;
+  map<string, string> tags = 3;
+}
+
+message DeleteVectorRequest {
+  string id = 1;
+}
+
+message DeleteVectorResponse {
+  bool success = 1;
+}
+
+message UpsertVectorRequest {
+  string id = 1;
+  repeated float vector = 2;
+  map<string, string> tags = 3;
+}
+
+message SearchRequest {
+  repeated float vector = 1;
+  uint32 top_k = 2;
+}
+
+message ListVectorsRequest {}
+
+message ListVectorsResponse {
+  repeated string ids = 1;
+}
+
+message GetStatsRequest {}
+
+message StatsResponse {
+  uint64 total_vectors = 1;
+  uint64 dimension = 2;
+  uint64 memory_usage = 3;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string service = 2;
+}
+
+// Shared Messages
+
+message VectorResponse {
+  string id = 1;
+  repeated float vector = 2;
+  uint64 dimension = 3;
+  uint64 created_at = 4;
+  uint64 updated_at = 5;
+  map<string, string> tags = 6;
+}
+
+message SearchResponse {
+  repeated SimilarityResult results = 1;
+  double total_time_ms = 2;
+}
+
+message SimilarityResult {
+  string id = 1;
+  float score = 2;
+  VectorMetadata metadata = 3;
+}
+
+message VectorMetadata {
+  string id = 1;
+  uint64 dimension = 2;
+  uint64 created_at = 3;
+  uint64 updated_at = 4;
+  map<string, string> tags = 5;
+}

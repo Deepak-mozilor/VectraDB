@@ -8,8 +8,8 @@ name = "basic_usage"
 path = "basic_usage.rs"
 
 [dependencies]
-vectradb-components = { path = "../src/components" }
-vectradb-search = { path = "../src/search" }
+vectradb-components = "0.1.0"
+vectradb-search = "0.1.0"
 ndarray = { workspace = true }
 tokio = { workspace = true }
 

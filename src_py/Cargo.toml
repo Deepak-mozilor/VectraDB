@@ -2,6 +2,11 @@
 name = "vectradb-py"
 version = "0.1.0"
 edition = "2021"
+description = "Python bindings for VectraDB"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
 [lib]
 name = "vectradb_py"
@@ -14,7 +19,7 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 pyo3 = { workspace = true }
-vectradb-components = { path = "../src/components" }
-vectradb-storage = { path = "../src/storage" }
-vectradb-search = { path = "../src/search" }
-vectradb-chunkers = { path = "../src/chunkers" }
+vectradb-components = "0.1.0"
+vectradb-storage = "0.1.0"
+vectradb-search = "0.1.0"
+vectradb-chunkers = "0.1.0"
