@@ -12,7 +12,7 @@ foreach ($c in $crates) {
   Write-Host "`n=== Packaging $c ==="
   Push-Location $c
   try {
-    cargo package
+    cargo package --manifest-path "$PWD\$c\Cargo.toml"
   } catch {
     Write-Warning "cargo package failed for $c. Aborting."
     Pop-Location
@@ -20,7 +20,7 @@ foreach ($c in $crates) {
   }
   Write-Host "=== Publishing $c ==="
   try {
-    cargo publish
+    cargo publish --manifest-path "$PWD\$c\Cargo.toml"
   } catch {
     Write-Warning "cargo publish failed for $c. It may already exist or an error occurred. Skipping."
   }

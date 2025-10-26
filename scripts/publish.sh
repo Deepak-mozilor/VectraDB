@@ -13,9 +13,9 @@ CRATES=(
 
 for c in "${CRATES[@]}"; do
   echo "\n=== Packaging $c ==="
-  (cd "$c" && cargo package) || { echo "cargo package failed for $c"; exit 1; }
+  (cargo package --manifest-path "$c/Cargo.toml") || { echo "cargo package failed for $c"; exit 1; }
   echo "=== Publishing $c ==="
-  (cd "$c" && cargo publish) || {
+  (cargo publish --manifest-path "$c/Cargo.toml") || {
     echo "cargo publish failed for $c - it might already be published or there was an error. Skipping.";
   }
   echo "Waiting 8 seconds for crates.io index to update..."
