@@ -2,6 +2,11 @@
 name = "vectradb-api"
 version = "0.1.0"
 edition = "2021"
+description = "API definitions for VectraDB in Rust"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
 [dependencies]
 ndarray = { workspace = true }

@@ -2,6 +2,11 @@
 name = "vectradb-search"
 version = "0.1.0"
 edition = "2021"
+description = "Production-grade vector search algorithms in Rust"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
 [dependencies]
 ndarray = { workspace = true }
@@ -10,4 +15,4 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 rand = "0.8"
 petgraph = "0.6"
-vectradb-components = { path = "../components" }
+vectradb-components = { version = "0.1.0" }
