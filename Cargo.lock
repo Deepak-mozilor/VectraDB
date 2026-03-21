@@ -2744,12 +2744,15 @@ name = "vectradb-search"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "ndarray",
  "petgraph",
+ "pollster",
  "rand",
  "serde",
  "thiserror 1.0.69",
  "vectradb-components",
+ "wgpu",
 ]
 
 [[package]]

@@ -8,6 +8,10 @@ repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
+[features]
+default = []
+gpu = ["wgpu", "pollster", "bytemuck"]
+
 [dependencies]
 ndarray = { workspace = true }
 serde = { workspace = true }
@@ -16,3 +20,8 @@ thiserror = { workspace = true }
 rand = "0.8"
 petgraph = "0.6"
 vectradb-components = { path = "../components" }
+
+# GPU (optional)
+wgpu = { version = "24", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1.21", features = ["derive"], optional = true }

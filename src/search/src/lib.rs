@@ -18,6 +18,10 @@ pub mod es4d;
 /// TensorSearch: Parallel Similarity Search on multi-dimensional tensors
 pub mod tensor;
 
+/// GPU-accelerated batch distance computation (requires `gpu` feature)
+#[cfg(feature = "gpu")]
+pub mod gpu;
+
 pub use es4d::{ES4DConfig, ES4DIndex};
 /// Re-export search algorithms
 pub use hnsw::HNSWIndex;

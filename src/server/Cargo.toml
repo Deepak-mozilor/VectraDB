@@ -9,6 +9,10 @@ homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 include = ["src/**", "proto/**", "Cargo.toml", "build.rs", "README.md"]
 
+[features]
+default = []
+gpu = ["vectradb-search/gpu"]
+
 [[bin]]
 name = "vectradb-server"
 path = "src/main.rs"
