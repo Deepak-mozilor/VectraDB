@@ -47,6 +47,8 @@ pub struct ES4DConfig {
     pub enable_det: bool,
     /// Enable dimension reordering by variance.
     pub enable_dimension_reorder: bool,
+    /// HNSW ef parameter used during search (higher = better recall, slower).
+    pub search_ef: usize,
 }
 
 impl Default for ES4DConfig {
@@ -59,6 +61,7 @@ impl Default for ES4DConfig {
             enable_cet: true,
             enable_det: true,
             enable_dimension_reorder: true,
+            search_ef: 50,
         }
     }
 }
@@ -596,6 +599,15 @@ impl ES4DIndex {
 
 impl AdvancedSearch for ES4DIndex {
     fn search(&self, query: &Array1<f32>, k: usize) -> Result<Vec<SearchResult>, VectraDBError> {
+        self.search_with_ef(query, k, self.config.search_ef)
+    }
+
+    fn search_with_ef(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
         if query.len() != self.dimension {
             return Err(VectraDBError::DimensionMismatch {
                 expected: self.dimension,
@@ -603,12 +615,9 @@ impl AdvancedSearch for ES4DIndex {
             });
         }
 
-        let _start = Instant::now();
-
-        // Reorder query dimensions to match stored vectors
         let q = Self::reorder_vector(query, &self.dimension_order);
 
-        let ef = (k * 2).max(self.config.ef_construction / 4).max(10);
+        let ef = ef.max(k);
         let entries = self.search_graph_internal(&q, ef, true, k);
 
         let results = entries
@@ -829,6 +838,7 @@ mod tests {
             enable_cet: false,
             enable_det: true,
             enable_dimension_reorder: false,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 
@@ -863,6 +873,7 @@ mod tests {
             enable_cet: true,
             enable_det: true,
             enable_dimension_reorder: true,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 
@@ -909,6 +920,7 @@ mod tests {
             enable_cet: false,
             enable_det: true,
             enable_dimension_reorder: false,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 

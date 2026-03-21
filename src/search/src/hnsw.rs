@@ -1,4 +1,4 @@
-use super::{AdvancedSearch, SearchResult, SearchStats};
+use super::{AdvancedSearch, DistanceMetric, SearchResult, SearchStats};
 use ndarray::Array1;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -8,6 +8,77 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
+// ---- Fast distance helpers (no allocation, auto-vectorized) ----
+
+/// L2 squared distance computed in 4-wide chunks for auto-vectorization.
+#[inline]
+fn fast_l2_distance(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len();
+    let mut sum0: f32 = 0.0;
+    let mut sum1: f32 = 0.0;
+    let mut sum2: f32 = 0.0;
+    let mut sum3: f32 = 0.0;
+    let chunks = n / 4;
+    for i in 0..chunks {
+        let j = i * 4;
+        let d0 = a[j] - b[j];
+        let d1 = a[j + 1] - b[j + 1];
+        let d2 = a[j + 2] - b[j + 2];
+        let d3 = a[j + 3] - b[j + 3];
+        sum0 += d0 * d0;
+        sum1 += d1 * d1;
+        sum2 += d2 * d2;
+        sum3 += d3 * d3;
+    }
+    for i in (chunks * 4)..n {
+        let d = a[i] - b[i];
+        sum0 += d * d;
+    }
+    (sum0 + sum1 + sum2 + sum3).sqrt()
+}
+
+/// Dot product in 4-wide chunks.
+#[inline]
+fn fast_dot(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len();
+    let mut sum0: f32 = 0.0;
+    let mut sum1: f32 = 0.0;
+    let mut sum2: f32 = 0.0;
+    let mut sum3: f32 = 0.0;
+    let chunks = n / 4;
+    for i in 0..chunks {
+        let j = i * 4;
+        sum0 += a[j] * b[j];
+        sum1 += a[j + 1] * b[j + 1];
+        sum2 += a[j + 2] * b[j + 2];
+        sum3 += a[j + 3] * b[j + 3];
+    }
+    for i in (chunks * 4)..n {
+        sum0 += a[i] * b[i];
+    }
+    sum0 + sum1 + sum2 + sum3
+}
+
+/// Cosine distance: 1 - cosine_similarity.
+#[inline]
+fn fast_cosine_distance(a: &[f32], b: &[f32]) -> f32 {
+    let n = a.len();
+    let mut dot: f32 = 0.0;
+    let mut norm_a: f32 = 0.0;
+    let mut norm_b: f32 = 0.0;
+    for i in 0..n {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom == 0.0 {
+        1.0
+    } else {
+        1.0 - (dot / denom)
+    }
+}
+
 /// HNSW (Hierarchical Navigable Small World) index implementation
 pub struct HNSWIndex {
     graph: DiGraph<VectorDocument, f32>,
@@ -16,9 +87,11 @@ pub struct HNSWIndex {
     id_to_node: HashMap<String, NodeIndex>,
     max_connections: usize,
     ef_construction: usize,
+    search_ef: usize,
     max_level: usize,
     stats: SearchStats,
     dimension: usize,
+    metric: DistanceMetric,
 }
 
 /// Heap entry ordered by distance for greedy search.
@@ -47,16 +120,24 @@ impl Ord for HNSWEntry {
 
 impl HNSWIndex {
     /// Create a new HNSW index
-    pub fn new(dimension: usize, m: usize, ef_construction: usize) -> Self {
+    pub fn new(
+        dimension: usize,
+        m: usize,
+        ef_construction: usize,
+        search_ef: usize,
+        metric: DistanceMetric,
+    ) -> Self {
         Self {
             graph: DiGraph::new(),
             entry_point: None,
             id_to_node: HashMap::new(),
             max_connections: m,
             ef_construction,
+            search_ef,
             max_level: 0,
             stats: SearchStats::default(),
             dimension,
+            metric,
         }
     }
 
@@ -83,7 +164,7 @@ impl HNSWIndex {
 
         for &ep in entry_points {
             if let Some(doc) = self.graph.node_weight(ep) {
-                let d = Self::calculate_distance(query, &doc.data);
+                let d = self.calculate_distance(query, &doc.data);
                 candidates.push(Reverse(HNSWEntry {
                     distance: d,
                     node: ep,
@@ -110,7 +191,7 @@ impl HNSWIndex {
                     continue;
                 }
                 if let Some(doc) = self.graph.node_weight(nbr) {
-                    let d = Self::calculate_distance(query, &doc.data);
+                    let d = self.calculate_distance(query, &doc.data);
                     if results.len() < ef || d < results.peek().unwrap().distance {
                         candidates.push(Reverse(HNSWEntry {
                             distance: d,
@@ -133,10 +214,15 @@ impl HNSWIndex {
         out
     }
 
-    /// Calculate Euclidean distance between vectors
-    fn calculate_distance(a: &Array1<f32>, b: &Array1<f32>) -> f32 {
-        let diff = a - b;
-        diff.dot(&diff).sqrt()
+    /// Calculate distance between vectors using raw slices to avoid allocation.
+    fn calculate_distance(&self, a: &Array1<f32>, b: &Array1<f32>) -> f32 {
+        let a = a.as_slice().unwrap();
+        let b = b.as_slice().unwrap();
+        match self.metric {
+            DistanceMetric::Euclidean => fast_l2_distance(a, b),
+            DistanceMetric::Cosine => fast_cosine_distance(a, b),
+            DistanceMetric::DotProduct => -fast_dot(a, b),
+        }
     }
 
     /// Keep at most `2*M` edges for a node, retaining closest.
@@ -185,7 +271,7 @@ impl HNSWIndex {
         for entry in candidates.iter().take(self.max_connections) {
             let nbr_idx = entry.node;
             // Distance between the NEW node and the NEIGHBOUR (fix #24)
-            let dist = Self::calculate_distance(&document.data, &self.graph[nbr_idx].data);
+            let dist = self.calculate_distance(&document.data, &self.graph[nbr_idx].data);
             self.graph.add_edge(node_idx, nbr_idx, dist);
             self.graph.add_edge(nbr_idx, node_idx, dist);
             self.prune_connections(nbr_idx);
@@ -203,6 +289,15 @@ impl HNSWIndex {
 
 impl AdvancedSearch for HNSWIndex {
     fn search(&self, query: &Array1<f32>, k: usize) -> Result<Vec<SearchResult>, VectraDBError> {
+        self.search_with_ef(query, k, self.search_ef)
+    }
+
+    fn search_with_ef(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
         if query.len() != self.dimension {
             return Err(VectraDBError::DimensionMismatch {
                 expected: self.dimension,
@@ -210,30 +305,29 @@ impl AdvancedSearch for HNSWIndex {
             });
         }
 
-        let start_time = Instant::now();
-
         let results = if let Some(entry) = self.entry_point {
-            let ef = (k * 2).max(10);
+            let ef = ef.max(k);
             let entries = self.search_layer(query, &[entry], ef);
             entries
                 .into_iter()
                 .take(k)
                 .map(|e| {
                     let id = self.graph[e.node].metadata.id.clone();
+                    let similarity = match self.metric {
+                        DistanceMetric::Cosine => 1.0 - e.distance,
+                        DistanceMetric::DotProduct => -e.distance,
+                        DistanceMetric::Euclidean => 1.0 / (1.0 + e.distance),
+                    };
                     SearchResult {
                         id,
                         distance: e.distance,
-                        similarity: 1.0 / (1.0 + e.distance),
+                        similarity,
                     }
                 })
                 .collect()
         } else {
             vec![]
         };
-
-        let _search_time = start_time.elapsed().as_millis() as f64;
-        // Note: stats update requires &mut self but search takes &self.
-        // Stats are tracked via get_stats() instead.
 
         Ok(results)
     }
@@ -302,14 +396,14 @@ mod tests {
 
     #[test]
     fn test_hnsw_creation() {
-        let index = HNSWIndex::new(3, 16, 200);
+        let index = HNSWIndex::new(3, 16, 200, 50, DistanceMetric::Euclidean);
         assert_eq!(index.dimension, 3);
         assert_eq!(index.max_connections, 16);
     }
 
     #[test]
     fn test_hnsw_insert_and_search() {
-        let mut index = HNSWIndex::new(3, 4, 50);
+        let mut index = HNSWIndex::new(3, 4, 50, 50, DistanceMetric::Euclidean);
 
         let doc1 =
             create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None)
@@ -334,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_dimension_mismatch() {
-        let mut index = HNSWIndex::new(3, 16, 200);
+        let mut index = HNSWIndex::new(3, 16, 200, 50, DistanceMetric::Euclidean);
         let doc = create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 2.0]), None)
             .unwrap();
 

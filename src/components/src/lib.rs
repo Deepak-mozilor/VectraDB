@@ -107,6 +107,9 @@ pub mod storage;
 pub mod tensor;
 pub mod vector_operations;
 
+#[cfg(feature = "gpu")]
+pub mod gpu;
+
 // Re-export main functionality
 pub use similarity::*;
 pub use vector_operations::*;

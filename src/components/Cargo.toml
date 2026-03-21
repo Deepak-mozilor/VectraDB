@@ -8,6 +8,10 @@ repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
+[features]
+default = []
+gpu = ["wgpu", "pollster", "bytemuck"]
+
 [dependencies]
 ndarray = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
@@ -15,3 +19,6 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
+wgpu = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }

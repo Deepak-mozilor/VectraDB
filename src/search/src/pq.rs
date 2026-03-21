@@ -16,14 +16,6 @@ pub struct PQIndex {
     stats: SearchStats,
 }
 
-/// PQ codebook for a subspace
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct PQCodebook {
-    centroids: Array2<f32>, // [codes_per_subspace, subspace_size]
-    subspace_dim: usize,
-}
-
 impl PQIndex {
     /// Create a new PQ index
     pub fn new(dimension: usize, num_subspaces: usize, codes_per_subspace: usize) -> Self {
@@ -190,7 +182,7 @@ impl PQIndex {
     }
 
     /// Decode PQ codes back to approximate vector
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn decode_vector(&self, codes: &[u8]) -> Result<Array1<f32>, VectraDBError> {
         if codes.len() != self.num_subspaces {
             return Err(VectraDBError::InvalidVector);

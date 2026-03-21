@@ -1,6 +1,7 @@
 use axum::{
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
+    middleware,
     response::Json,
     routing::{delete, get, post, put},
     Router,
@@ -15,7 +16,10 @@ use vectradb_components::{
     filter::{FilterCondition, MetadataFilter},
     DatabaseStats, SimilarityResult, VectorDatabase, VectraDBError,
 };
-use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
+use vectradb_storage::{BatchInsertResult, DatabaseConfig, PersistentVectorDB};
+
+pub mod auth;
+pub use auth::AuthConfig;
 
 /// API server state
 #[derive(Clone)]
@@ -23,6 +27,8 @@ pub struct AppState {
     pub db: Arc<RwLock<PersistentVectorDB>>,
     /// Optional embedding provider for text-based endpoints.
     pub embedder: Option<Arc<dyn vectradb_embeddings::EmbeddingProvider>>,
+    /// Authentication configuration.
+    pub auth: Arc<AuthConfig>,
 }
 
 /// Request/Response types for API endpoints
@@ -44,6 +50,11 @@ pub struct UpdateVectorRequest {
 pub struct UpsertVectorRequest {
     pub vector: Vec<f32>,
     pub tags: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchCreateRequest {
+    pub vectors: Vec<CreateVectorRequest>,
 }
 
 /// A key-value tag condition for filtering.
@@ -115,6 +126,8 @@ impl SearchFilter {
 pub struct SearchRequest {
     pub vector: Vec<f32>,
     pub top_k: Option<usize>,
+    /// Optional per-query ef_search override (higher = better recall, slower).
+    pub ef_search: Option<usize>,
     /// Optional metadata filter.
     pub filter: Option<SearchFilter>,
 }
@@ -143,10 +156,13 @@ pub struct ErrorResponse {
 
 /// Create the API router
 pub fn create_router(state: AppState) -> Router {
+    let auth_state = state.auth.clone();
+
     Router::new()
         .route("/health", get(health_check))
         .route("/stats", get(get_stats))
         .route("/vectors", post(create_vector))
+        .route("/vectors/batch", post(batch_create_vectors))
         .route("/vectors/:id", get(get_vector))
         .route("/vectors/:id", put(update_vector))
         .route("/vectors/:id", delete(delete_vector))
@@ -158,6 +174,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/text", post(create_vector_from_text))
         .route("/search/text", post(search_by_text))
         .route("/vectors/text/batch", post(batch_create_from_text))
+        // Auth middleware (checks Bearer token on all routes except /health)
+        .layer(middleware::from_fn_with_state(
+            auth_state,
+            auth::auth_middleware,
+        ))
+        .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB for batch inserts
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -228,34 +250,69 @@ async fn create_vector(
     Json(request): Json<CreateVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
     validate_request_vector(&request.vector)?;
+    let id = request.id.clone();
+    let dim = request.vector.len();
+    let tags = request.tags.clone().unwrap_or_default();
     let vector = Array1::from_vec(request.vector);
 
     let mut db = state.db.write().await;
-    match db.create_vector(request.id.clone(), vector, request.tags) {
+    match db.create_vector(id.clone(), vector.clone(), request.tags) {
         Ok(_) => {
-            // Fetch the created vector to return complete information
-            match db.get_vector(&request.id) {
-                Ok(document) => Ok(Json(VectorResponse {
-                    id: document.metadata.id,
-                    vector: document.data.to_vec(),
-                    dimension: document.metadata.dimension,
-                    created_at: document.metadata.created_at,
-                    updated_at: document.metadata.updated_at,
-                    tags: document.metadata.tags,
-                })),
-                Err(e) => Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: "Failed to fetch created vector".to_string(),
-                        message: e.to_string(),
-                    }),
-                )),
-            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            Ok(Json(VectorResponse {
+                id,
+                vector: vector.to_vec(),
+                dimension: dim,
+                created_at: now,
+                updated_at: now,
+                tags,
+            }))
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
                 error: "Failed to create vector".to_string(),
+                message: e.to_string(),
+            }),
+        )),
+    }
+}
+
+/// Batch create vectors (single flush at the end)
+async fn batch_create_vectors(
+    State(state): State<AppState>,
+    Json(request): Json<BatchCreateRequest>,
+) -> Result<Json<BatchInsertResult>, (StatusCode, Json<ErrorResponse>)> {
+    if request.vectors.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Empty batch".to_string(),
+                message: "vectors array must not be empty".to_string(),
+            }),
+        ));
+    }
+
+    for v in &request.vectors {
+        validate_request_vector(&v.vector)?;
+    }
+
+    let batch: Vec<_> = request
+        .vectors
+        .into_iter()
+        .map(|v| (v.id, Array1::from_vec(v.vector), v.tags))
+        .collect();
+
+    let mut db = state.db.write().await;
+    match db.batch_create_vectors(batch) {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Batch insert failed".to_string(),
                 message: e.to_string(),
             }),
         )),
@@ -416,6 +473,7 @@ async fn search_vectors(
     validate_request_vector(&request.vector)?;
     let vector = Array1::from_vec(request.vector);
     let top_k = request.top_k.unwrap_or(10).clamp(1, 10000);
+    let ef_search = request.ef_search;
 
     let metadata_filter = request.filter.as_ref().and_then(|f| f.to_metadata_filter());
 
@@ -424,6 +482,8 @@ async fn search_vectors(
 
     let search_result = if metadata_filter.is_some() {
         db.search_with_filter(vector, top_k, metadata_filter.as_ref())
+    } else if let Some(ef) = ef_search {
+        db.search_similar_with_ef(vector, top_k, ef)
     } else {
         db.search_similar(vector, top_k)
     };
@@ -700,6 +760,7 @@ pub async fn start_server(
     let state = AppState {
         db: Arc::new(RwLock::new(db)),
         embedder: None,
+        auth: Arc::new(AuthConfig::disabled()),
     };
 
     // Create router
@@ -737,6 +798,7 @@ mod tests {
         let request = SearchRequest {
             vector: vec![1.0, 2.0, 3.0],
             top_k: Some(5),
+            ef_search: None,
             filter: None,
         };
 

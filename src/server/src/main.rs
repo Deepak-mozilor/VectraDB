@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
-use vectradb_search::SearchAlgorithm;
+use vectradb_search::{DistanceMetric, SearchAlgorithm};
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 mod grpc;
@@ -61,6 +61,10 @@ struct Args {
     #[arg(long, default_value = "64")]
     shard_length: usize,
 
+    /// Distance metric: euclidean, cosine, dot
+    #[arg(long, default_value = "euclidean")]
+    metric: String,
+
     /// Enable auto-flush
     #[arg(long, default_value = "true")]
     auto_flush: bool,
@@ -84,6 +88,16 @@ struct Args {
     /// Embedding API key (or use OPENAI_API_KEY / HF_API_KEY / COHERE_API_KEY env vars)
     #[arg(long)]
     embedding_api_key: Option<String>,
+
+    /// Admin API key (full read+write access). Can be specified multiple times.
+    /// Also reads from VECTRADB_API_KEY env var.
+    #[arg(long)]
+    api_key: Vec<String>,
+
+    /// Read-only API key (search, get, list only). Can be specified multiple times.
+    /// Also reads from VECTRADB_API_KEY_READONLY env var.
+    #[arg(long)]
+    api_key_readonly: Vec<String>,
 }
 
 #[tokio::main]
@@ -109,6 +123,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Parse distance metric
+    let metric = match args.metric.to_lowercase().as_str() {
+        "euclidean" | "l2" => DistanceMetric::Euclidean,
+        "cosine" => DistanceMetric::Cosine,
+        "dot" | "dot_product" | "ip" => DistanceMetric::DotProduct,
+        _ => {
+            eprintln!(
+                "Invalid metric: {}. Supported: euclidean, cosine, dot",
+                args.metric
+            );
+            std::process::exit(1);
+        }
+    };
+
     // Create database configuration
     let config = DatabaseConfig {
         data_dir: args.data_dir.to_string_lossy().to_string(),
@@ -126,6 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             num_subspaces: Some(8),
             codes_per_subspace: Some(256),
             shard_length: Some(args.shard_length),
+            metric,
         },
         auto_flush: args.auto_flush,
         cache_size: args.cache_size,
@@ -172,9 +201,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         };
 
+    // Build auth config from CLI args + env vars
+    let mut admin_keys = args.api_key;
+    if let Ok(env_key) = std::env::var("VECTRADB_API_KEY") {
+        admin_keys.push(env_key);
+    }
+    let mut readonly_keys = args.api_key_readonly;
+    if let Ok(env_key) = std::env::var("VECTRADB_API_KEY_READONLY") {
+        readonly_keys.push(env_key);
+    }
+    let auth_config = Arc::new(vectradb_api::AuthConfig::new(admin_keys, readonly_keys));
+    if auth_config.enabled {
+        println!("API key authentication: enabled");
+    }
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
     let http_embedder = embedder.clone();
+    let http_auth = auth_config.clone();
     let http_port = args.port;
 
     // Start HTTP server task
@@ -194,6 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = vectradb_api::AppState {
             db: http_db,
             embedder: http_embedder,
+            auth: http_auth,
         };
         let app = vectradb_api::create_router(state);
 

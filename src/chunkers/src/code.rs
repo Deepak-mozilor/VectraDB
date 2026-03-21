@@ -4,12 +4,9 @@ use regex::Regex;
 use std::collections::HashMap;
 
 /// Code chunker for source code files
-#[allow(dead_code)]
 pub struct CodeChunker {
     function_regex: Regex,
     class_regex: Regex,
-    comment_regex: Regex,
-    // language_parsers: HashMap<String, Language>, // Will be added when tree-sitter is integrated
 }
 
 impl Default for CodeChunker {
@@ -26,7 +23,6 @@ impl CodeChunker {
         Self {
             function_regex: Regex::new(r"(?m)^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:async\s+)?(?:function\s+|def\s+|fn\s+|func\s+|\w+\s*\([^)]*\)\s*\{)").unwrap(),
             class_regex: Regex::new(r"(?m)^\s*(?:public\s+|private\s+|protected\s+)?(?:class\s+|struct\s+|interface\s+|trait\s+|enum\s+)").unwrap(),
-            comment_regex: Regex::new(r"(?m)^\s*(?://|#|\*|\/\*|\*\/|<!--)").unwrap(),
         }
     }
 
