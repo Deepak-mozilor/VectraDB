@@ -11,7 +11,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
-use vectradb_components::{DatabaseStats, SimilarityResult, VectorDatabase, VectraDBError};
+use vectradb_components::{
+    filter::{FilterCondition, MetadataFilter},
+    DatabaseStats, SimilarityResult, VectorDatabase, VectraDBError,
+};
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 /// API server state
@@ -41,10 +44,77 @@ pub struct UpsertVectorRequest {
     pub tags: Option<HashMap<String, String>>,
 }
 
+/// A key-value tag condition for filtering.
+#[derive(Debug, Deserialize)]
+pub struct TagCondition {
+    pub key: String,
+    pub value: String,
+}
+
+/// Filter for narrowing search results by metadata tags.
+///
+/// - `must`: All conditions must match (AND)
+/// - `must_not`: None of these conditions should match (AND NOT)
+/// - `should`: At least one condition must match (OR)
+#[derive(Debug, Deserialize)]
+pub struct SearchFilter {
+    pub must: Option<Vec<TagCondition>>,
+    pub must_not: Option<Vec<TagCondition>>,
+    pub should: Option<Vec<TagCondition>>,
+}
+
+impl SearchFilter {
+    /// Convert to the internal MetadataFilter type.
+    fn to_metadata_filter(&self) -> Option<MetadataFilter> {
+        let mut parts = Vec::new();
+
+        if let Some(must) = &self.must {
+            for c in must {
+                parts.push(MetadataFilter::Condition(FilterCondition::Equals {
+                    key: c.key.clone(),
+                    value: c.value.clone(),
+                }));
+            }
+        }
+
+        if let Some(must_not) = &self.must_not {
+            for c in must_not {
+                parts.push(MetadataFilter::Condition(FilterCondition::NotEquals {
+                    key: c.key.clone(),
+                    value: c.value.clone(),
+                }));
+            }
+        }
+
+        if let Some(should) = &self.should {
+            if !should.is_empty() {
+                let or_parts: Vec<MetadataFilter> = should
+                    .iter()
+                    .map(|c| {
+                        MetadataFilter::Condition(FilterCondition::Equals {
+                            key: c.key.clone(),
+                            value: c.value.clone(),
+                        })
+                    })
+                    .collect();
+                parts.push(MetadataFilter::Or(or_parts));
+            }
+        }
+
+        match parts.len() {
+            0 => None,
+            1 => Some(parts.remove(0)),
+            _ => Some(MetadataFilter::And(parts)),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchRequest {
     pub vector: Vec<f32>,
     pub top_k: Option<usize>,
+    /// Optional metadata filter.
+    pub filter: Option<SearchFilter>,
 }
 
 #[derive(Debug, Serialize)]
@@ -340,10 +410,18 @@ async fn search_vectors(
     let vector = Array1::from_vec(request.vector);
     let top_k = request.top_k.unwrap_or(10).clamp(1, 10000);
 
+    let metadata_filter = request.filter.as_ref().and_then(|f| f.to_metadata_filter());
+
     let start_time = std::time::Instant::now();
     let db = state.db.read().await;
 
-    match db.search_similar(vector, top_k) {
+    let search_result = if metadata_filter.is_some() {
+        db.search_with_filter(vector, top_k, metadata_filter.as_ref())
+    } else {
+        db.search_similar(vector, top_k)
+    };
+
+    match search_result {
         Ok(results) => {
             let total_time = start_time.elapsed().as_secs_f64() * 1000.0; // Convert to milliseconds
             Ok(Json(SearchResponse {

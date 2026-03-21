@@ -100,6 +100,7 @@ pub struct DatabaseStats {
 }
 
 // Module declarations
+pub mod filter;
 pub mod indexing;
 pub mod similarity;
 pub mod storage;

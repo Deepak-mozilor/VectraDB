@@ -12,9 +12,10 @@
 
 use ndarray::Array1;
 use rand::Rng;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
+use vectradb_components::filter::*;
 use vectradb_components::tensor::*;
 use vectradb_components::*;
 use vectradb_search::*;
@@ -960,4 +961,225 @@ fn test_top_1_is_nearest_neighbor() {
 
     let results = index.search(&target, 1).unwrap();
     assert_eq!(results[0].id, "near", "Nearest vector should be 'near'");
+}
+
+// ============================================================
+// 12. METADATA FILTER TESTS
+// ============================================================
+
+#[test]
+fn test_filter_condition_all_variants() {
+    let tags: HashMap<String, String> = [
+        ("category", "article"),
+        ("lang", "en"),
+        ("status", "published"),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect();
+
+    // Equals
+    assert!(FilterCondition::Equals {
+        key: "category".into(),
+        value: "article".into()
+    }
+    .matches(&tags));
+    assert!(!FilterCondition::Equals {
+        key: "category".into(),
+        value: "video".into()
+    }
+    .matches(&tags));
+
+    // NotEquals
+    assert!(FilterCondition::NotEquals {
+        key: "status".into(),
+        value: "deleted".into()
+    }
+    .matches(&tags));
+    assert!(!FilterCondition::NotEquals {
+        key: "status".into(),
+        value: "published".into()
+    }
+    .matches(&tags));
+
+    // In
+    assert!(FilterCondition::In {
+        key: "lang".into(),
+        values: vec!["en".into(), "fr".into()]
+    }
+    .matches(&tags));
+    assert!(!FilterCondition::In {
+        key: "lang".into(),
+        values: vec!["de".into(), "es".into()]
+    }
+    .matches(&tags));
+
+    // Exists / NotExists
+    assert!(FilterCondition::Exists {
+        key: "category".into()
+    }
+    .matches(&tags));
+    assert!(!FilterCondition::Exists {
+        key: "missing".into()
+    }
+    .matches(&tags));
+    assert!(FilterCondition::NotExists {
+        key: "missing".into()
+    }
+    .matches(&tags));
+    assert!(!FilterCondition::NotExists {
+        key: "category".into()
+    }
+    .matches(&tags));
+}
+
+#[test]
+fn test_filter_complex_boolean_logic() {
+    // category="article" AND (source="news" OR source="blog") AND status!="deleted"
+    let filter = MetadataFilter::And(vec![
+        MetadataFilter::Condition(FilterCondition::Equals {
+            key: "category".into(),
+            value: "article".into(),
+        }),
+        MetadataFilter::Or(vec![
+            MetadataFilter::Condition(FilterCondition::Equals {
+                key: "source".into(),
+                value: "news".into(),
+            }),
+            MetadataFilter::Condition(FilterCondition::Equals {
+                key: "source".into(),
+                value: "blog".into(),
+            }),
+        ]),
+        MetadataFilter::Condition(FilterCondition::NotEquals {
+            key: "status".into(),
+            value: "deleted".into(),
+        }),
+    ]);
+
+    let make_tags = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    };
+
+    // Passes: article + news + active
+    assert!(filter.matches(&make_tags(&[
+        ("category", "article"),
+        ("source", "news"),
+        ("status", "active")
+    ])));
+
+    // Passes: article + blog + (no status = passes NotEquals)
+    assert!(filter.matches(&make_tags(&[("category", "article"), ("source", "blog")])));
+
+    // Fails: wrong category
+    assert!(!filter.matches(&make_tags(&[("category", "video"), ("source", "news")])));
+
+    // Fails: wrong source
+    assert!(!filter.matches(&make_tags(&[("category", "article"), ("source", "wiki")])));
+
+    // Fails: deleted
+    assert!(!filter.matches(&make_tags(&[
+        ("category", "article"),
+        ("source", "news"),
+        ("status", "deleted")
+    ])));
+}
+
+#[tokio::test]
+async fn test_persistent_db_search_with_filter() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dim = 8;
+
+    let config = vectradb_storage::DatabaseConfig {
+        data_dir: temp_dir.path().to_string_lossy().to_string(),
+        search_algorithm: SearchAlgorithm::HNSW,
+        index_config: SearchConfig {
+            dimension: Some(dim),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut db = vectradb_storage::PersistentVectorDB::new(config)
+        .await
+        .unwrap();
+
+    // Insert vectors with different categories
+    for i in 0..30 {
+        let v = random_vector(dim);
+        let category = if i < 10 {
+            "article"
+        } else if i < 20 {
+            "video"
+        } else {
+            "image"
+        };
+        let mut tags = HashMap::new();
+        tags.insert("category".to_string(), category.to_string());
+        tags.insert("index".to_string(), i.to_string());
+        db.create_vector(format!("f{i}"), v, Some(tags)).unwrap();
+    }
+
+    let query = random_vector(dim);
+
+    // Search without filter — should return results from any category
+    let all_results = db.search_with_filter(query.clone(), 10, None).unwrap();
+    assert_eq!(all_results.len(), 10);
+
+    // Search with filter: category="article"
+    let article_filter = MetadataFilter::Condition(FilterCondition::Equals {
+        key: "category".into(),
+        value: "article".into(),
+    });
+    let article_results = db
+        .search_with_filter(query.clone(), 10, Some(&article_filter))
+        .unwrap();
+
+    // All results should have category=article
+    for r in &article_results {
+        assert_eq!(
+            r.metadata.tags.get("category"),
+            Some(&"article".to_string()),
+            "Filtered result {} has wrong category: {:?}",
+            r.id,
+            r.metadata.tags
+        );
+    }
+    // Should have at most 10 articles (we inserted 10)
+    assert!(article_results.len() <= 10);
+    assert!(!article_results.is_empty());
+
+    // Search with filter: category!="image"
+    let not_image_filter = MetadataFilter::Condition(FilterCondition::NotEquals {
+        key: "category".into(),
+        value: "image".into(),
+    });
+    let not_image_results = db
+        .search_with_filter(query.clone(), 20, Some(&not_image_filter))
+        .unwrap();
+
+    for r in &not_image_results {
+        assert_ne!(
+            r.metadata.tags.get("category"),
+            Some(&"image".to_string()),
+            "Filter should exclude images, but got {}",
+            r.id
+        );
+    }
+
+    // Search with impossible filter — should return empty
+    let impossible_filter = MetadataFilter::Condition(FilterCondition::Equals {
+        key: "category".into(),
+        value: "nonexistent".into(),
+    });
+    let empty_results = db
+        .search_with_filter(query, 10, Some(&impossible_filter))
+        .unwrap();
+    assert!(
+        empty_results.is_empty(),
+        "Impossible filter should return no results"
+    );
 }

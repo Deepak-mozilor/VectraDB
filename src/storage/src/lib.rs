@@ -4,7 +4,8 @@ use sled::{Db, Tree};
 use std::collections::HashMap;
 use std::sync::Arc;
 use vectradb_components::{
-    DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata, VectraDBError,
+    filter::MetadataFilter, DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata,
+    VectraDBError,
 };
 use vectradb_search::{
     AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, LSHIndex, PQIndex, SearchAlgorithm,
@@ -426,6 +427,64 @@ impl VectorDatabase for PersistentVectorDB {
             dimension: self.config.index_config.dimension.unwrap_or(384),
             memory_usage: index_stats.index_size_bytes as u64,
         })
+    }
+}
+
+// ---- Filtered search (not part of the VectorDatabase trait) ----
+
+impl PersistentVectorDB {
+    /// Search for similar vectors with metadata filtering.
+    ///
+    /// Over-fetches from the search index, then filters by metadata tags.
+    /// This avoids modifying the search algorithms while still providing
+    /// accurate filtered results.
+    ///
+    /// # Arguments
+    /// * `query_vector` - The query vector
+    /// * `top_k` - Number of results to return after filtering
+    /// * `filter` - Optional metadata filter (must/must_not/should conditions)
+    pub fn search_with_filter(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+        filter: Option<&MetadataFilter>,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        // No filter → delegate to standard search
+        let filter = match filter {
+            Some(f) => f,
+            None => return self.search_similar(query_vector, top_k),
+        };
+
+        // Over-fetch: request more candidates than needed since some will be filtered out.
+        // Start with 10x, which handles filters that discard up to 90% of results.
+        let oversample_factor = 10;
+        let fetch_count = (top_k * oversample_factor).max(100);
+
+        let search_results = self.index.search(&query_vector, fetch_count)?;
+
+        let mut filtered = Vec::with_capacity(top_k);
+
+        for result in search_results {
+            // Fetch full metadata from persistent storage
+            let metadata = match self.load_vector_sync(&result.id) {
+                Ok(doc) => doc.metadata,
+                Err(_) => continue,
+            };
+
+            // Apply filter
+            if filter.matches(&metadata.tags) {
+                filtered.push(vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
+                });
+                if filtered.len() >= top_k {
+                    break;
+                }
+            }
+        }
+
+        Ok(filtered)
     }
 }
 
