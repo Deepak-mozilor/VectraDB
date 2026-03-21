@@ -536,6 +536,7 @@ async fn search_gpu_handler(
     #[cfg(not(feature = "gpu"))]
     {
         let _ = (state, request);
+        #[allow(clippy::needless_return)]
         return Err((
             StatusCode::NOT_IMPLEMENTED,
             Json(ErrorResponse {
