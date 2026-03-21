@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Server;
-use vectradb_search::SearchAlgorithm;
+use vectradb_search::{DistanceMetric, SearchAlgorithm};
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
 mod grpc;
@@ -61,6 +61,10 @@ struct Args {
     #[arg(long, default_value = "64")]
     shard_length: usize,
 
+    /// Distance metric: euclidean, cosine, dot
+    #[arg(long, default_value = "euclidean")]
+    metric: String,
+
     /// Enable auto-flush
     #[arg(long, default_value = "true")]
     auto_flush: bool,
@@ -109,6 +113,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Parse distance metric
+    let metric = match args.metric.to_lowercase().as_str() {
+        "euclidean" | "l2" => DistanceMetric::Euclidean,
+        "cosine" => DistanceMetric::Cosine,
+        "dot" | "dot_product" | "ip" => DistanceMetric::DotProduct,
+        _ => {
+            eprintln!(
+                "Invalid metric: {}. Supported: euclidean, cosine, dot",
+                args.metric
+            );
+            std::process::exit(1);
+        }
+    };
+
     // Create database configuration
     let config = DatabaseConfig {
         data_dir: args.data_dir.to_string_lossy().to_string(),
@@ -126,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             num_subspaces: Some(8),
             codes_per_subspace: Some(256),
             shard_length: Some(args.shard_length),
+            metric,
         },
         auto_flush: args.auto_flush,
         cache_size: args.cache_size,

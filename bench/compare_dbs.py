@@ -64,15 +64,18 @@ class VectraDBBench:
         pass  # server already running
 
     def insert(self, vectors: np.ndarray) -> float:
-        url = f"{self.url}/vectors"
+        url = f"{self.url}/vectors/batch"
+        batch_size = 1000
         t0 = time.perf_counter()
-        for i, vec in enumerate(vectors):
-            payload = {
-                "id": f"v-{i}",
-                "vector": vec.tolist(),
-                "tags": {"bench": "true"},
+        for start in range(0, len(vectors), batch_size):
+            end = min(start + batch_size, len(vectors))
+            batch = {
+                "vectors": [
+                    {"id": f"v-{i}", "vector": vectors[i].tolist(), "tags": {"bench": "true"}}
+                    for i in range(start, end)
+                ]
             }
-            r = self.session.post(url, json=payload)
+            r = self.session.post(url, json=batch)
             r.raise_for_status()
         return time.perf_counter() - t0
 

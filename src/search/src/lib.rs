@@ -25,6 +25,14 @@ pub use lsh::LSHIndex;
 pub use pq::PQIndex;
 pub use tensor::TensorSearchEngine;
 
+/// Distance metric used by search algorithms.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DistanceMetric {
+    Euclidean,
+    Cosine,
+    DotProduct,
+}
+
 /// Search configuration for different algorithms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchConfig {
@@ -40,6 +48,7 @@ pub struct SearchConfig {
     pub num_subspaces: Option<usize>,      // For PQ
     pub codes_per_subspace: Option<usize>, // For PQ
     pub shard_length: Option<usize>,       // For ES4D (DET shard size, default 64)
+    pub metric: DistanceMetric,            // Distance metric
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -66,6 +75,7 @@ impl Default for SearchConfig {
             num_subspaces: Some(8),
             codes_per_subspace: Some(256),
             shard_length: Some(64),
+            metric: DistanceMetric::Euclidean,
         }
     }
 }
@@ -102,6 +112,18 @@ impl Eq for SearchResult {}
 /// Trait for advanced search algorithms
 pub trait AdvancedSearch {
     fn search(&self, query: &Array1<f32>, k: usize) -> Result<Vec<SearchResult>, VectraDBError>;
+    /// Search with a per-query ef override. Implementations that support it
+    /// should use `ef` instead of their configured default. Falls back to
+    /// `search()` by default.
+    fn search_with_ef(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
+        let _ = ef; // default ignores ef
+        self.search(query, k)
+    }
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError>;
     fn remove(&mut self, id: &str) -> Result<(), VectraDBError>;
     fn update(&mut self, id: &str, document: VectorDocument) -> Result<(), VectraDBError>;

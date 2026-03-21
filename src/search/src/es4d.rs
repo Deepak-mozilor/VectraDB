@@ -599,6 +599,15 @@ impl ES4DIndex {
 
 impl AdvancedSearch for ES4DIndex {
     fn search(&self, query: &Array1<f32>, k: usize) -> Result<Vec<SearchResult>, VectraDBError> {
+        self.search_with_ef(query, k, self.config.search_ef)
+    }
+
+    fn search_with_ef(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        ef: usize,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
         if query.len() != self.dimension {
             return Err(VectraDBError::DimensionMismatch {
                 expected: self.dimension,
@@ -606,12 +615,9 @@ impl AdvancedSearch for ES4DIndex {
             });
         }
 
-        let _start = Instant::now();
-
-        // Reorder query dimensions to match stored vectors
         let q = Self::reorder_vector(query, &self.dimension_order);
 
-        let ef = self.config.search_ef.max(k);
+        let ef = ef.max(k);
         let entries = self.search_graph_internal(&q, ef, true, k);
 
         let results = entries

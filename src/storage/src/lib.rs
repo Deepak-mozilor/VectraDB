@@ -65,6 +65,7 @@ impl PersistentVectorDB {
                 config.index_config.m,
                 config.index_config.ef_construction,
                 config.index_config.search_ef,
+                config.index_config.metric,
             )),
             SearchAlgorithm::LSH => Box::new(LSHIndex::new(
                 config.index_config.dimension.unwrap_or(384),
@@ -358,6 +359,39 @@ impl VectorDatabase for PersistentVectorDB {
 // ---- Filtered search (not part of the VectorDatabase trait) ----
 
 impl PersistentVectorDB {
+    /// Search with a per-query ef override for HNSW/ES4D.
+    pub fn search_similar_with_ef(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+        ef: usize,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        let search_results = self.index.search_with_ef(&query_vector, top_k, ef)?;
+
+        let similarity_results: Vec<vectradb_components::SimilarityResult> = search_results
+            .into_iter()
+            .map(|result| {
+                let metadata = self
+                    .load_vector_sync(&result.id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: result.id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(similarity_results)
+    }
+
     /// Search for similar vectors with metadata filtering.
     ///
     /// Over-fetches from the search index, then filters by metadata tags.
@@ -411,6 +445,85 @@ impl PersistentVectorDB {
 
         Ok(filtered)
     }
+
+    /// Insert multiple vectors in a single batch with one flush at the end.
+    ///
+    /// Much faster than calling `create_vector` in a loop because it defers
+    /// the disk flush until all vectors are inserted.
+    pub fn batch_create_vectors(
+        &mut self,
+        vectors: Vec<(String, Array1<f32>, Option<HashMap<String, String>>)>,
+    ) -> Result<BatchInsertResult, VectraDBError> {
+        let total = vectors.len();
+        let mut inserted = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+
+        for (id, vector, tags) in vectors {
+            let document = match vectradb_components::vector_operations::create_vector_document(
+                id.clone(),
+                vector,
+                tags,
+            ) {
+                Ok(doc) => doc,
+                Err(e) => {
+                    errors.push(format!("{}: {}", id, e));
+                    continue;
+                }
+            };
+
+            // Insert into index
+            if let Err(e) = self.index.insert(document.clone()) {
+                errors.push(format!("{}: {}", id, e));
+                continue;
+            }
+
+            // Store to disk (without flushing)
+            let vector_bytes = bincode::serialize(&document.data)
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+            let metadata_bytes = bincode::serialize(&document.metadata)
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+
+            self.vectors_tree
+                .insert(id.as_bytes(), vector_bytes)
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+            self.metadata_tree
+                .insert(id.as_bytes(), metadata_bytes)
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+
+            inserted += 1;
+        }
+
+        self.stats.total_vectors = self.vectors_tree.len();
+
+        // Single flush at the end
+        if self.config.auto_flush {
+            self.storage
+                .flush()
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+        }
+
+        Ok(BatchInsertResult {
+            total,
+            inserted,
+            errors,
+        })
+    }
+
+    /// Manually flush all pending writes to disk.
+    pub fn flush(&self) -> Result<(), VectraDBError> {
+        self.storage
+            .flush()
+            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+        Ok(())
+    }
+}
+
+/// Result of a batch insert operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchInsertResult {
+    pub total: usize,
+    pub inserted: usize,
+    pub errors: Vec<String>,
 }
 
 #[cfg(test)]
