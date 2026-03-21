@@ -7,7 +7,8 @@ members = [
     "src/chunkers",
     "src/api",
     "src_py",
-    "src/server"
+    "src/server",
+    "tests"
 ]
 
 [workspace.dependencies]

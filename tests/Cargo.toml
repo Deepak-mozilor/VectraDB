@@ -1,0 +1,18 @@
+[package]
+name = "vectradb-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[test]]
+name = "stress_tests"
+path = "stress_tests.rs"
+
+[dependencies]
+vectradb-components = { path = "../src/components" }
+vectradb-search = { path = "../src/search" }
+vectradb-storage = { path = "../src/storage" }
+ndarray = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+tempfile = { workspace = true }

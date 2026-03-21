@@ -1,4 +1,28 @@
-# VectraDB
+<p align="center">
+  <img src="docs/assets/banner.png" alt="VectraDB Banner" />
+</p>
+
+<h1 align="center">VectraDB</h1>
+
+<p align="center">
+  <strong>High-performance vector database built in Rust</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#search-algorithms">Algorithms</a> •
+  <a href="#rest-api-reference">API Reference</a> •
+  <a href="#python-client">Python Client</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust" />
+  <a href="https://github.com/Amrithesh-Kakkoth/VectraDB"><img src="https://img.shields.io/github/stars/Amrithesh-Kakkoth/VectraDB" alt="Stars" /></a>
+  <a href="https://deepwiki.com/Amrithesh-Kakkoth/VectraDB"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+</p>
+
+---
 
 A high-performance vector database built in Rust. Store, search, and manage high-dimensional vectors with sub-millisecond query times.
 
