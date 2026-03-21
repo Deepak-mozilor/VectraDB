@@ -486,10 +486,28 @@ async fn search_vectors(
 
     let search_result = if metadata_filter.is_some() {
         db.search_with_filter(vector, top_k, metadata_filter.as_ref())
-    } else if let Some(ef) = ef_search {
-        db.search_similar_with_ef(vector, top_k, ef)
     } else {
-        db.search_similar(vector, top_k)
+        // Use GPU reranking when available for better recall
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(gpu) = &state.gpu {
+                let metric = db.config().index_config.metric;
+                let rerank_ef = ef_search.unwrap_or(500).max(top_k * 10);
+                db.search_gpu_rerank(vector, top_k, rerank_ef, gpu, metric)
+            } else if let Some(ef) = ef_search {
+                db.search_similar_with_ef(vector, top_k, ef)
+            } else {
+                db.search_similar(vector, top_k)
+            }
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            if let Some(ef) = ef_search {
+                db.search_similar_with_ef(vector, top_k, ef)
+            } else {
+                db.search_similar(vector, top_k)
+            }
+        }
     };
 
     match search_result {

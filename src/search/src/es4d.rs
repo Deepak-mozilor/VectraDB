@@ -636,6 +636,73 @@ impl AdvancedSearch for ES4DIndex {
         Ok(results)
     }
 
+    #[cfg(feature = "gpu")]
+    fn search_gpu_rerank(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        rerank_ef: usize,
+        gpu: &super::gpu::GpuDistanceEngine,
+        metric: super::DistanceMetric,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
+        if query.len() != self.dimension {
+            return Err(VectraDBError::DimensionMismatch {
+                expected: self.dimension,
+                actual: query.len(),
+            });
+        }
+
+        // Step 1: ES4D fetches candidates on CPU (with reordered dimensions)
+        let q = Self::reorder_vector(query, &self.dimension_order);
+        let ef = rerank_ef.max(k);
+        let entries = self.search_graph_internal(&q, ef, true, rerank_ef);
+
+        if entries.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Step 2: Collect ORIGINAL (non-reordered) vectors for GPU
+        let mut ids: Vec<String> = Vec::with_capacity(entries.len());
+        let mut flat_data: Vec<f32> = Vec::with_capacity(entries.len() * self.dimension);
+
+        for e in &entries {
+            let id = &self.graph[e.node];
+            ids.push(id.clone());
+            if let Some(doc) = self.documents.get(id) {
+                if let Some(s) = doc.data.as_slice() {
+                    flat_data.extend_from_slice(s);
+                }
+            }
+        }
+
+        // Step 3: GPU computes exact distances on original vectors
+        let query_slice = query.as_slice().unwrap();
+        let distances = gpu.batch_distances(query_slice, &flat_data, self.dimension, metric);
+
+        // Step 4: Sort and return top-k
+        let mut scored: Vec<(usize, f32)> = distances.into_iter().enumerate().collect();
+        scored.sort_by(|a, b| a.1.total_cmp(&b.1));
+        scored.truncate(k);
+
+        let results = scored
+            .into_iter()
+            .map(|(i, dist)| {
+                let similarity = match metric {
+                    super::DistanceMetric::Cosine => 1.0 - dist,
+                    super::DistanceMetric::DotProduct => -dist,
+                    super::DistanceMetric::Euclidean => 1.0 / (1.0 + dist),
+                };
+                SearchResult {
+                    id: ids[i].clone(),
+                    distance: dist,
+                    similarity,
+                }
+            })
+            .collect();
+
+        Ok(results)
+    }
+
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError> {
         if document.data.len() != self.dimension {
             return Err(VectraDBError::DimensionMismatch {

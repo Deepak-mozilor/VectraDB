@@ -523,6 +523,47 @@ impl PersistentVectorDB {
         Ok(())
     }
 
+    /// Hybrid GPU search: HNSW/ES4D fetches candidates on CPU, GPU re-ranks exactly.
+    ///
+    /// This combines the speed of graph-based search with GPU-exact distances,
+    /// achieving near-100% recall at HNSW-like latency.
+    #[cfg(feature = "gpu")]
+    pub fn search_gpu_rerank(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+        rerank_ef: usize,
+        gpu: &vectradb_search::gpu::GpuDistanceEngine,
+        metric: vectradb_search::DistanceMetric,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        let search_results =
+            self.index
+                .search_gpu_rerank(&query_vector, top_k, rerank_ef, gpu, metric)?;
+
+        let similarity_results = search_results
+            .into_iter()
+            .map(|result| {
+                let metadata = self
+                    .load_vector_sync(&result.id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: result.id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(similarity_results)
+    }
+
     /// GPU brute-force search: compute distances on GPU for all stored vectors.
     ///
     /// This bypasses the HNSW index and instead sends all vectors to the GPU

@@ -128,6 +128,25 @@ pub trait AdvancedSearch {
         let _ = ef; // default ignores ef
         self.search(query, k)
     }
+    /// Hybrid GPU search: use index to get candidates, then GPU re-ranks exactly.
+    ///
+    /// `rerank_ef` controls how many candidates the index fetches (higher = better
+    /// recall but more GPU work). The GPU then computes exact distances for all
+    /// candidates and returns the true top-k.
+    #[cfg(feature = "gpu")]
+    fn search_gpu_rerank(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        rerank_ef: usize,
+        gpu: &gpu::GpuDistanceEngine,
+        metric: DistanceMetric,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
+        // Default: fall back to CPU search (overridden for HNSW/ES4D)
+        let _ = (gpu, metric, rerank_ef);
+        self.search(query, k)
+    }
+
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError>;
     fn remove(&mut self, id: &str) -> Result<(), VectraDBError>;
     fn update(&mut self, id: &str, document: VectorDocument) -> Result<(), VectraDBError>;
