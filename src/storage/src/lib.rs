@@ -64,6 +64,7 @@ impl PersistentVectorDB {
                 config.index_config.dimension.unwrap_or(384),
                 config.index_config.m,
                 config.index_config.ef_construction,
+                config.index_config.search_ef,
             )),
             SearchAlgorithm::LSH => Box::new(LSHIndex::new(
                 config.index_config.dimension.unwrap_or(384),

@@ -16,6 +16,7 @@ pub struct HNSWIndex {
     id_to_node: HashMap<String, NodeIndex>,
     max_connections: usize,
     ef_construction: usize,
+    search_ef: usize,
     max_level: usize,
     stats: SearchStats,
     dimension: usize,
@@ -47,13 +48,14 @@ impl Ord for HNSWEntry {
 
 impl HNSWIndex {
     /// Create a new HNSW index
-    pub fn new(dimension: usize, m: usize, ef_construction: usize) -> Self {
+    pub fn new(dimension: usize, m: usize, ef_construction: usize, search_ef: usize) -> Self {
         Self {
             graph: DiGraph::new(),
             entry_point: None,
             id_to_node: HashMap::new(),
             max_connections: m,
             ef_construction,
+            search_ef,
             max_level: 0,
             stats: SearchStats::default(),
             dimension,
@@ -213,7 +215,7 @@ impl AdvancedSearch for HNSWIndex {
         let start_time = Instant::now();
 
         let results = if let Some(entry) = self.entry_point {
-            let ef = (k * 2).max(10);
+            let ef = self.search_ef.max(k);
             let entries = self.search_layer(query, &[entry], ef);
             entries
                 .into_iter()
@@ -302,14 +304,14 @@ mod tests {
 
     #[test]
     fn test_hnsw_creation() {
-        let index = HNSWIndex::new(3, 16, 200);
+        let index = HNSWIndex::new(3, 16, 200, 50);
         assert_eq!(index.dimension, 3);
         assert_eq!(index.max_connections, 16);
     }
 
     #[test]
     fn test_hnsw_insert_and_search() {
-        let mut index = HNSWIndex::new(3, 4, 50);
+        let mut index = HNSWIndex::new(3, 4, 50, 50);
 
         let doc1 =
             create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 0.0, 0.0]), None)
@@ -334,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_hnsw_dimension_mismatch() {
-        let mut index = HNSWIndex::new(3, 16, 200);
+        let mut index = HNSWIndex::new(3, 16, 200, 50);
         let doc = create_vector_document("1".to_string(), Array1::from_vec(vec![1.0, 2.0]), None)
             .unwrap();
 
