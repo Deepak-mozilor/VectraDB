@@ -1,6 +1,25 @@
-# VectraDB - High-Performance Vector Database
+<h1 align="center">VectraDB</h1>
 
-A modern, high-performance vector database built in Rust with multiple indexing strategies, dual API interfaces (REST + gRPC), and Python client library.
+<p align="center">
+  <strong>High-performance vector database built in Rust</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#api-reference">API Reference</a> •
+  <a href="#documentation">Documentation</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust" />
+  <a href="https://github.com/Amrithesh-Kakkoth/VectraDB"><img src="https://img.shields.io/github/stars/Amrithesh-Kakkoth/VectraDB" alt="Stars" /></a>
+  <a href="https://deepwiki.com/Amrithesh-Kakkoth/VectraDB"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+</p>
+
+---
+
+A modern vector database with multiple indexing strategies (HNSW, LSH, PQ), dual API interfaces (REST + gRPC), and a Python client library.
 
 ## Features
 
