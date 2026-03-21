@@ -116,6 +116,7 @@ impl TensorSearchEngine {
     /// Returns top-k offsets with highest similarity.
     ///
     /// Uses cache-efficient computation order (paper Section III-C).
+    #[allow(clippy::too_many_arguments)]
     pub fn shifting_search(
         &self,
         pattern: &TensorData,
@@ -272,21 +273,21 @@ pub fn shifting_search_cache_efficient(
 
             // Iterate over all offsets — reference column data accessed sequentially
             let r_cols = reference.shape()[1];
-            for offset in 0..num_positions {
+            for (offset, sim_val) in similarities.iter_mut().enumerate().take(num_positions) {
                 let mut r_col = Vec::with_capacity(p_rows);
                 for row in 0..p_rows {
                     r_col.push(reference.data()[(offset + row) * r_cols + col]);
                 }
                 let sim = slice_similarity(&p_col, &r_col, metric);
-                similarities[offset] += w * sim;
+                *sim_val += w * sim;
             }
         }
     } else {
         // General case (slower but works for any rank)
-        for offset in 0..num_positions {
+        for (offset, sim_val) in similarities.iter_mut().enumerate().take(num_positions) {
             let sub = reference.subtensor(shift_dim, offset, p_extent)?;
             let sim = weighted_tensor_similarity(pattern, &sub, agg_dim, weights, metric);
-            similarities[offset] = sim;
+            *sim_val = sim;
         }
         total_weight = 1.0; // already normalized inside weighted_tensor_similarity
     }
