@@ -7,7 +7,8 @@ use vectradb_components::{
     DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata, VectraDBError,
 };
 use vectradb_search::{
-    AdvancedSearch, HNSWIndex, LSHIndex, PQIndex, SearchAlgorithm, SearchConfig,
+    AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, LSHIndex, PQIndex, SearchAlgorithm,
+    SearchConfig,
 };
 
 /// Persistent vector database with multiple indexing strategies
@@ -72,6 +73,13 @@ impl PersistentVectorDB {
                 config.index_config.num_subspaces.unwrap_or(8),
                 config.index_config.codes_per_subspace.unwrap_or(256),
             )),
+            SearchAlgorithm::ES4D => Box::new(ES4DIndex::new(ES4DConfig {
+                dimension: config.index_config.dimension.unwrap_or(384),
+                shard_length: config.index_config.shard_length.unwrap_or(64),
+                m: config.index_config.m,
+                ef_construction: config.index_config.ef_construction,
+                ..Default::default()
+            })),
             _ => {
                 return Err(VectraDBError::DatabaseError(anyhow::anyhow!(
                     "Unsupported search algorithm"
@@ -341,7 +349,7 @@ impl VectorDatabase for PersistentVectorDB {
         // Remove from persistent storage
         self.remove_stored_vector_sync(id)?;
 
-        self.stats.total_vectors -= 1;
+        self.stats.total_vectors = self.stats.total_vectors.saturating_sub(1);
         Ok(())
     }
 
@@ -372,17 +380,21 @@ impl VectorDatabase for PersistentVectorDB {
         let similarity_results: Vec<vectradb_components::SimilarityResult> = search_results
             .into_iter()
             .map(|result| {
-                let id = result.id.clone();
-                vectradb_components::SimilarityResult {
-                    id: result.id,
-                    score: result.similarity,
-                    metadata: vectradb_components::VectorMetadata {
-                        id,
-                        dimension: 0, // Will be filled from actual document
+                // Fetch actual metadata from storage when available
+                let metadata = self
+                    .load_vector_sync(&result.id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: result.id.clone(),
+                        dimension: 0,
                         created_at: 0,
                         updated_at: 0,
                         tags: HashMap::new(),
-                    },
+                    });
+                vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
                 }
             })
             .collect();

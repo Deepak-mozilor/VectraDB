@@ -16,5 +16,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 sled = { workspace = true }
 bincode = { workspace = true }
-vectradb-components = "0.1.0"
-vectradb-search = "0.1.0"
+vectradb-components = { path = "../components" }
+vectradb-search = { path = "../search" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

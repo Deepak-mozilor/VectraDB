@@ -57,6 +57,10 @@ struct Args {
     #[arg(long, default_value = "1000")]
     num_buckets: usize,
 
+    /// Shard length for ES4D DET (dimension-level early termination)
+    #[arg(long, default_value = "64")]
+    shard_length: usize,
+
     /// Enable auto-flush
     #[arg(long, default_value = "true")]
     auto_flush: bool,
@@ -79,9 +83,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "hnsw" => SearchAlgorithm::HNSW,
         "lsh" => SearchAlgorithm::LSH,
         "pq" => SearchAlgorithm::PQ,
+        "es4d" => SearchAlgorithm::ES4D,
         _ => {
             eprintln!(
-                "Invalid algorithm: {}. Supported algorithms: hnsw, lsh, pq",
+                "Invalid algorithm: {}. Supported algorithms: hnsw, lsh, pq, es4d",
                 args.algorithm
             );
             std::process::exit(1);
@@ -104,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dimension: Some(args.dimension),
             num_subspaces: Some(8),
             codes_per_subspace: Some(256),
+            shard_length: Some(args.shard_length),
         },
         auto_flush: args.auto_flush,
         cache_size: args.cache_size,
@@ -129,9 +135,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start HTTP server task
     let http_handle = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
-            .await
-            .expect("Failed to bind HTTP port");
+        let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port)).await {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("Failed to bind HTTP port {}: {}", http_port, e);
+                return;
+            }
+        };
         println!(
             "VectraDB HTTP API server running on http://0.0.0.0:{}",
             http_port

@@ -6,12 +6,16 @@ use vectradb_components::{VectorDocument, VectraDBError};
 /// HNSW (Hierarchical Navigable Small World) search implementation
 pub mod hnsw;
 
-/// LSH (Locality Sensitive Hashing) search implementation  
+/// LSH (Locality Sensitive Hashing) search implementation
 pub mod lsh;
 
 /// Product Quantization search implementation
 pub mod pq;
 
+/// ES4D: Exact Similarity Search via Vector Slicing, adapted for HNSW
+pub mod es4d;
+
+pub use es4d::{ES4DConfig, ES4DIndex};
 /// Re-export search algorithms
 pub use hnsw::HNSWIndex;
 pub use lsh::LSHIndex;
@@ -31,6 +35,7 @@ pub struct SearchConfig {
     pub dimension: Option<usize>,          // Vector dimension
     pub num_subspaces: Option<usize>,      // For PQ
     pub codes_per_subspace: Option<usize>, // For PQ
+    pub shard_length: Option<usize>,       // For ES4D (DET shard size, default 64)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -39,6 +44,7 @@ pub enum SearchAlgorithm {
     LSH,
     PQ,
     Linear,
+    ES4D,
 }
 
 impl Default for SearchConfig {
@@ -55,6 +61,7 @@ impl Default for SearchConfig {
             dimension: Some(384),
             num_subspaces: Some(8),
             codes_per_subspace: Some(256),
+            shard_length: Some(64),
         }
     }
 }
