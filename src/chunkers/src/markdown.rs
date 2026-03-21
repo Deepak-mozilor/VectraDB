@@ -1,6 +1,5 @@
 use crate::{Chunk, ChunkType, Chunker, ChunkingConfig};
 use anyhow::Result;
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -204,125 +203,8 @@ impl MarkdownChunker {
         chunks
     }
 
-    /// Chunks markdown using pulldown-cmark parser for more accurate parsing
-    #[allow(dead_code)]
-    fn chunk_by_ast(&self, content: &str, config: &ChunkingConfig) -> Vec<Chunk> {
-        let mut chunks = Vec::new();
-        let parser = Parser::new(content);
-        let mut current_chunk = String::new();
-        let current_heading: Option<String> = None;
-        let mut chunk_start = 0;
-        let mut in_code_block = false;
-        let mut _code_language: Option<String> = None;
-
-        for event in parser {
-            match event {
-                Event::Start(Tag::Heading {
-                    level: _,
-                    id: _,
-                    classes: _,
-                    attrs: _,
-                }) => {
-                    // Save previous chunk if it exists
-                    if !current_chunk.is_empty() {
-                        chunks.push(Chunk {
-                            content: current_chunk.clone(),
-                            start_index: chunk_start,
-                            end_index: chunk_start + current_chunk.len(),
-                            chunk_type: ChunkType::Markdown,
-                            metadata: self.create_markdown_metadata(
-                                &current_chunk,
-                                chunk_start,
-                                "section",
-                                current_heading.as_deref(),
-                            ),
-                        });
-                        current_chunk.clear();
-                    }
-                    chunk_start += current_chunk.len();
-                }
-                Event::Text(text) => {
-                    current_chunk.push_str(&text);
-                }
-                Event::Code(code) => {
-                    current_chunk.push_str(&format!("`{}`", code));
-                }
-                Event::Start(Tag::CodeBlock(lang)) => {
-                    in_code_block = true;
-                    let lang_str = match &lang {
-                        pulldown_cmark::CodeBlockKind::Fenced(lang_name) => {
-                            lang_name.as_ref().to_string()
-                        }
-                        pulldown_cmark::CodeBlockKind::Indented => String::new(),
-                    };
-                    _code_language = Some(lang_str.clone());
-                    current_chunk.push_str("```");
-                    if !lang_str.is_empty() {
-                        current_chunk.push_str(&lang_str);
-                    }
-                    current_chunk.push('\n');
-                }
-                Event::End(TagEnd::CodeBlock) => {
-                    in_code_block = false;
-                    current_chunk.push_str("```");
-                    _code_language = None;
-                }
-                Event::Start(Tag::Paragraph) => {
-                    if !in_code_block {
-                        current_chunk.push('\n');
-                    }
-                }
-                Event::End(TagEnd::Paragraph) => {
-                    if !in_code_block {
-                        current_chunk.push('\n');
-                    }
-                }
-                Event::End(TagEnd::Heading(_)) => {
-                    // End of heading, could save chunk here if needed
-                }
-                _ => {}
-            }
-
-            // Check if chunk is getting too large
-            if current_chunk.len() > config.max_chunk_size {
-                chunks.push(Chunk {
-                    content: current_chunk.clone(),
-                    start_index: chunk_start,
-                    end_index: chunk_start + current_chunk.len(),
-                    chunk_type: ChunkType::Markdown,
-                    metadata: self.create_markdown_metadata(
-                        &current_chunk,
-                        chunk_start,
-                        "section",
-                        current_heading.as_deref(),
-                    ),
-                });
-                chunk_start += current_chunk.len();
-                current_chunk.clear();
-            }
-        }
-
-        // Add remaining content
-        if !current_chunk.is_empty() {
-            chunks.push(Chunk {
-                content: current_chunk.clone(),
-                start_index: chunk_start,
-                end_index: chunk_start + current_chunk.len(),
-                chunk_type: ChunkType::Markdown,
-                metadata: self.create_markdown_metadata(
-                    &current_chunk,
-                    chunk_start,
-                    "section",
-                    current_heading.as_deref(),
-                ),
-            });
-        }
-
-        chunks
-    }
-
     /// Extracts heading text from markdown content
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn extract_heading_text(&self, content: &str) -> Option<String> {
         for line in content.lines() {
             if self.heading_regex.is_match(line.trim()) {

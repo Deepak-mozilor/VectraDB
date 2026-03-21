@@ -142,36 +142,6 @@ impl PersistentVectorDB {
     }
 
     /// Serialize and store vector data
-    #[allow(dead_code)]
-    async fn store_vector(&self, id: &str, document: &VectorDocument) -> Result<(), VectraDBError> {
-        // Serialize vector data
-        let vector_bytes = bincode::serialize(&document.data)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        let metadata_bytes = bincode::serialize(&document.metadata)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        // Store in database
-        self.vectors_tree
-            .insert(id.as_bytes(), vector_bytes)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        self.metadata_tree
-            .insert(id.as_bytes(), metadata_bytes)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        // Flush if auto-flush is enabled
-        if self.config.auto_flush {
-            self.storage
-                .flush_async()
-                .await
-                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-        }
-
-        Ok(())
-    }
-
-    /// Serialize and store vector data (sync version)
     fn store_vector_sync(&self, id: &str, document: &VectorDocument) -> Result<(), VectraDBError> {
         // Serialize vector data
         let vector_bytes = bincode::serialize(&document.data)
@@ -200,32 +170,6 @@ impl PersistentVectorDB {
     }
 
     /// Load vector from persistent storage
-    #[allow(dead_code)]
-    async fn load_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError> {
-        // Load metadata
-        let metadata_bytes = self
-            .metadata_tree
-            .get(id.as_bytes())
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?
-            .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })?;
-
-        let metadata: VectorMetadata = bincode::deserialize(&metadata_bytes)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        // Load vector data
-        let vector_bytes = self
-            .vectors_tree
-            .get(id.as_bytes())
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?
-            .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })?;
-
-        let data: Array1<f32> = bincode::deserialize(&vector_bytes)
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        Ok(VectorDocument { metadata, data })
-    }
-
-    /// Load vector from persistent storage (sync version)
     fn load_vector_sync(&self, id: &str) -> Result<VectorDocument, VectraDBError> {
         // Load metadata
         let metadata_bytes = self
@@ -251,27 +195,6 @@ impl PersistentVectorDB {
     }
 
     /// Remove vector from persistent storage
-    #[allow(dead_code)]
-    async fn remove_stored_vector(&self, id: &str) -> Result<(), VectraDBError> {
-        self.vectors_tree
-            .remove(id.as_bytes())
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        self.metadata_tree
-            .remove(id.as_bytes())
-            .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-
-        if self.config.auto_flush {
-            self.storage
-                .flush_async()
-                .await
-                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
-        }
-
-        Ok(())
-    }
-
-    /// Remove vector from persistent storage (sync version)
     fn remove_stored_vector_sync(&self, id: &str) -> Result<(), VectraDBError> {
         self.vectors_tree
             .remove(id.as_bytes())

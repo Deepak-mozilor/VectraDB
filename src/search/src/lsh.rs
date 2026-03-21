@@ -6,12 +6,11 @@ use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
 /// LSH (Locality Sensitive Hashing) index implementation
-#[allow(dead_code)]
 pub struct LSHIndex {
     hash_functions: Vec<LSHFunction>,
     buckets: HashMap<String, Vec<VectorDocument>>,
     dimension: usize,
-    num_hashes: usize,
+    _num_hashes: usize,
     stats: SearchStats,
 }
 
@@ -52,7 +51,7 @@ impl LSHIndex {
             hash_functions,
             buckets: HashMap::new(),
             dimension,
-            num_hashes,
+            _num_hashes: num_hashes,
             stats: SearchStats::default(),
         }
     }
@@ -66,32 +65,6 @@ impl LSHIndex {
         }
 
         signature
-    }
-
-    /// Calculate Jaccard similarity between two hash signatures
-    #[allow(dead_code)]
-    fn jaccard_similarity(&self, sig1: &str, sig2: &str) -> f32 {
-        if sig1.len() != sig2.len() {
-            return 0.0;
-        }
-
-        let mut intersection = 0;
-        let mut union = 0;
-
-        for (c1, c2) in sig1.chars().zip(sig2.chars()) {
-            if c1 == '1' || c2 == '1' {
-                union += 1;
-                if c1 == '1' && c2 == '1' {
-                    intersection += 1;
-                }
-            }
-        }
-
-        if union == 0 {
-            0.0
-        } else {
-            intersection as f32 / union as f32
-        }
     }
 
     /// Calculate cosine similarity between vectors
@@ -267,7 +240,7 @@ mod tests {
     fn test_lsh_creation() {
         let index = LSHIndex::new(3, 10);
         assert_eq!(index.dimension, 3);
-        assert_eq!(index.num_hashes, 10);
+        assert_eq!(index._num_hashes, 10);
     }
 
     #[test]
