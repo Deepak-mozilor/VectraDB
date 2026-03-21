@@ -1,6 +1,7 @@
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
+    middleware,
     response::Json,
     routing::{delete, get, post, put},
     Router,
@@ -17,12 +18,17 @@ use vectradb_components::{
 };
 use vectradb_storage::{BatchInsertResult, DatabaseConfig, PersistentVectorDB};
 
+pub mod auth;
+pub use auth::AuthConfig;
+
 /// API server state
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<RwLock<PersistentVectorDB>>,
     /// Optional embedding provider for text-based endpoints.
     pub embedder: Option<Arc<dyn vectradb_embeddings::EmbeddingProvider>>,
+    /// Authentication configuration.
+    pub auth: Arc<AuthConfig>,
 }
 
 /// Request/Response types for API endpoints
@@ -150,6 +156,8 @@ pub struct ErrorResponse {
 
 /// Create the API router
 pub fn create_router(state: AppState) -> Router {
+    let auth_state = state.auth.clone();
+
     Router::new()
         .route("/health", get(health_check))
         .route("/stats", get(get_stats))
@@ -166,6 +174,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/text", post(create_vector_from_text))
         .route("/search/text", post(search_by_text))
         .route("/vectors/text/batch", post(batch_create_from_text))
+        // Auth middleware (checks Bearer token on all routes except /health)
+        .layer(middleware::from_fn_with_state(
+            auth_state,
+            auth::auth_middleware,
+        ))
         .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB for batch inserts
         .layer(
             CorsLayer::new()
@@ -747,6 +760,7 @@ pub async fn start_server(
     let state = AppState {
         db: Arc::new(RwLock::new(db)),
         embedder: None,
+        auth: Arc::new(AuthConfig::disabled()),
     };
 
     // Create router
@@ -784,6 +798,7 @@ mod tests {
         let request = SearchRequest {
             vector: vec![1.0, 2.0, 3.0],
             top_k: Some(5),
+            ef_search: None,
             filter: None,
         };
 

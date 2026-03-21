@@ -41,6 +41,11 @@ tonic-build = "0.12"
 petgraph = "0.6"
 rand = "0.8"
 
+# GPU compute
+wgpu = "24"
+pollster = "0.4"
+bytemuck = { version = "1.14", features = ["derive"] }
+
 # Python bindings
 pyo3 = { version = "0.20", features = ["extension-module"] }
 

@@ -328,7 +328,7 @@ fn test_search_recall_comparison_all_algorithms() {
     let docs = build_dataset(n, dim);
 
     // Build all indexes
-    let mut hnsw = HNSWIndex::new(dim, 16, 200);
+    let mut hnsw = HNSWIndex::new(dim, 16, 200, 50, DistanceMetric::Euclidean);
     let mut lsh = LSHIndex::new(dim, 20);
     let mut pq = PQIndex::new(dim, 4, 16);
     let mut es4d = ES4DIndex::new(ES4DConfig {
@@ -404,7 +404,7 @@ fn test_search_recall_comparison_all_algorithms() {
 #[test]
 fn test_algorithm_insert_delete_consistency() {
     let dim = 16;
-    let mut index = HNSWIndex::new(dim, 8, 100);
+    let mut index = HNSWIndex::new(dim, 8, 100, 50, DistanceMetric::Euclidean);
 
     // Insert 100 vectors
     let docs = build_dataset(100, dim);
@@ -439,7 +439,7 @@ fn test_high_dimensional_512() {
     let n = 200;
     let docs = build_dataset(n, dim);
 
-    let mut hnsw = HNSWIndex::new(dim, 16, 100);
+    let mut hnsw = HNSWIndex::new(dim, 16, 100, 50, DistanceMetric::Euclidean);
     hnsw.build_index(docs.clone()).unwrap();
 
     let query = normalized_random_vector(dim);
@@ -464,12 +464,13 @@ fn test_es4d_det_effectiveness_high_dim() {
 
     let mut es4d = ES4DIndex::new(ES4DConfig {
         dimension: dim,
-        shard_length: 32, // 8 shards of 32 dims each
+        shard_length: 32,
         m: 8,
         ef_construction: 100,
         enable_cet: true,
         enable_det: true,
         enable_dimension_reorder: true,
+        ..Default::default()
     });
     es4d.build_index(docs.clone()).unwrap();
 
@@ -493,7 +494,7 @@ fn test_search_performance_benchmark() {
     let num_queries = 100;
     let docs = build_dataset(n, dim);
 
-    let mut hnsw = HNSWIndex::new(dim, 16, 200);
+    let mut hnsw = HNSWIndex::new(dim, 16, 200, 50, DistanceMetric::Euclidean);
     hnsw.build_index(docs.clone()).unwrap();
 
     let queries: Vec<Array1<f32>> = (0..num_queries)
@@ -828,7 +829,7 @@ fn test_tensor_subtensor_extraction_correctness() {
 #[test]
 fn test_hnsw_heavy_churn() {
     let dim = 32;
-    let mut index = HNSWIndex::new(dim, 8, 100);
+    let mut index = HNSWIndex::new(dim, 8, 100, 50, DistanceMetric::Euclidean);
 
     // Insert 500
     for i in 0..500 {
@@ -884,6 +885,7 @@ fn test_es4d_build_index_then_incremental_insert() {
         enable_cet: true,
         enable_det: true,
         enable_dimension_reorder: true,
+        ..Default::default()
     });
 
     // Build with 100 vectors
@@ -914,7 +916,7 @@ fn test_all_algorithms_return_sorted_results() {
     let dim = 16;
     let docs = build_dataset(100, dim);
 
-    let mut hnsw = HNSWIndex::new(dim, 8, 100);
+    let mut hnsw = HNSWIndex::new(dim, 8, 100, 50, DistanceMetric::Euclidean);
     let mut lsh = LSHIndex::new(dim, 15);
     let mut es4d = ES4DIndex::new(ES4DConfig {
         dimension: dim,
@@ -949,7 +951,7 @@ fn test_all_algorithms_return_sorted_results() {
 #[test]
 fn test_top_1_is_nearest_neighbor() {
     let dim = 8;
-    let mut index = HNSWIndex::new(dim, 16, 200);
+    let mut index = HNSWIndex::new(dim, 16, 200, 50, DistanceMetric::Euclidean);
 
     // Insert a known nearest neighbor
     let target = Array1::from_vec(vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);

@@ -88,6 +88,16 @@ struct Args {
     /// Embedding API key (or use OPENAI_API_KEY / HF_API_KEY / COHERE_API_KEY env vars)
     #[arg(long)]
     embedding_api_key: Option<String>,
+
+    /// Admin API key (full read+write access). Can be specified multiple times.
+    /// Also reads from VECTRADB_API_KEY env var.
+    #[arg(long)]
+    api_key: Vec<String>,
+
+    /// Read-only API key (search, get, list only). Can be specified multiple times.
+    /// Also reads from VECTRADB_API_KEY_READONLY env var.
+    #[arg(long)]
+    api_key_readonly: Vec<String>,
 }
 
 #[tokio::main]
@@ -191,9 +201,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         };
 
+    // Build auth config from CLI args + env vars
+    let mut admin_keys = args.api_key;
+    if let Ok(env_key) = std::env::var("VECTRADB_API_KEY") {
+        admin_keys.push(env_key);
+    }
+    let mut readonly_keys = args.api_key_readonly;
+    if let Ok(env_key) = std::env::var("VECTRADB_API_KEY_READONLY") {
+        readonly_keys.push(env_key);
+    }
+    let auth_config = Arc::new(vectradb_api::AuthConfig::new(admin_keys, readonly_keys));
+    if auth_config.enabled {
+        println!("API key authentication: enabled");
+    }
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
     let http_embedder = embedder.clone();
+    let http_auth = auth_config.clone();
     let http_port = args.port;
 
     // Start HTTP server task
@@ -213,6 +238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = vectradb_api::AppState {
             db: http_db,
             embedder: http_embedder,
+            auth: http_auth,
         };
         let app = vectradb_api::create_router(state);
 

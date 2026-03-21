@@ -450,6 +450,7 @@ impl PersistentVectorDB {
     ///
     /// Much faster than calling `create_vector` in a loop because it defers
     /// the disk flush until all vectors are inserted.
+    #[allow(clippy::type_complexity)]
     pub fn batch_create_vectors(
         &mut self,
         vectors: Vec<(String, Array1<f32>, Option<HashMap<String, String>>)>,
