@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="VectraDB Banner" />
+</p>
+
 <h1 align="center">VectraDB</h1>
 
 <p align="center">
