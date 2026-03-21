@@ -45,9 +45,9 @@ impl FilterCondition {
     /// Evaluate this condition against a set of tags.
     pub fn matches(&self, tags: &HashMap<String, String>) -> bool {
         match self {
-            Self::Equals { key, value } => tags.get(key).map_or(false, |v| v == value),
-            Self::NotEquals { key, value } => tags.get(key).map_or(true, |v| v != value),
-            Self::In { key, values } => tags.get(key).map_or(false, |v| values.contains(v)),
+            Self::Equals { key, value } => tags.get(key) == Some(value),
+            Self::NotEquals { key, value } => tags.get(key) != Some(value),
+            Self::In { key, values } => tags.get(key).is_some_and(|v| values.contains(v)),
             Self::Exists { key } => tags.contains_key(key),
             Self::NotExists { key } => !tags.contains_key(key),
         }
