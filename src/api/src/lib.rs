@@ -21,6 +21,8 @@ use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<RwLock<PersistentVectorDB>>,
+    /// Optional embedding provider for text-based endpoints.
+    pub embedder: Option<Arc<dyn vectradb_embeddings::EmbeddingProvider>>,
 }
 
 /// Request/Response types for API endpoints
@@ -151,6 +153,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/:id/upsert", put(upsert_vector))
         .route("/search", post(search_vectors))
         .route("/vectors", get(list_vectors))
+        // Text-based endpoints (require embedding provider)
+        .route("/embed", post(embed_text))
+        .route("/vectors/text", post(create_vector_from_text))
+        .route("/search/text", post(search_by_text))
+        .route("/vectors/text/batch", post(batch_create_from_text))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -456,6 +463,233 @@ async fn list_vectors(
     }
 }
 
+// ============================================================
+// Text-based endpoints (require embedding provider)
+// ============================================================
+
+#[derive(Debug, Deserialize)]
+pub struct EmbedTextRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmbedTextResponse {
+    pub vector: Vec<f32>,
+    pub dimension: usize,
+    pub model: String,
+    pub provider: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateVectorFromTextRequest {
+    pub id: String,
+    pub text: String,
+    pub tags: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchByTextRequest {
+    pub text: String,
+    pub top_k: Option<usize>,
+    pub filter: Option<SearchFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchTextDocument {
+    pub id: String,
+    pub text: String,
+    pub tags: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchCreateFromTextRequest {
+    pub documents: Vec<BatchTextDocument>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchCreateResponse {
+    pub created: usize,
+    pub errors: Vec<String>,
+}
+
+/// Helper: get the embedder or return 501.
+fn require_embedder(
+    state: &AppState,
+) -> Result<&Arc<dyn vectradb_embeddings::EmbeddingProvider>, (StatusCode, Json<ErrorResponse>)> {
+    state.embedder.as_ref().ok_or_else(|| {
+        (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(ErrorResponse {
+                error: "Embeddings not configured".to_string(),
+                message: "Start the server with --embedding-provider to enable text endpoints"
+                    .to_string(),
+            }),
+        )
+    })
+}
+
+/// POST /embed — embed text, return the vector
+async fn embed_text(
+    State(state): State<AppState>,
+    Json(request): Json<EmbedTextRequest>,
+) -> Result<Json<EmbedTextResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let embedder = require_embedder(&state)?;
+
+    let vector = embedder.embed(&request.text).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Embedding failed".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(Json(EmbedTextResponse {
+        dimension: vector.len(),
+        vector,
+        model: embedder.model_name().to_string(),
+        provider: embedder.provider_name().to_string(),
+    }))
+}
+
+/// POST /vectors/text — embed text and store as a vector
+async fn create_vector_from_text(
+    State(state): State<AppState>,
+    Json(request): Json<CreateVectorFromTextRequest>,
+) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let embedder = require_embedder(&state)?;
+
+    let vector_data = embedder.embed(&request.text).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Embedding failed".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    let vector = Array1::from_vec(vector_data);
+    let mut db = state.db.write().await;
+
+    // Store the original text in tags
+    let mut tags = request.tags.unwrap_or_default();
+    tags.insert("_text".to_string(), request.text);
+
+    match db.create_vector(request.id.clone(), vector, Some(tags)) {
+        Ok(_) => match db.get_vector(&request.id) {
+            Ok(doc) => Ok(Json(VectorResponse {
+                id: doc.metadata.id,
+                vector: doc.data.to_vec(),
+                dimension: doc.metadata.dimension,
+                created_at: doc.metadata.created_at,
+                updated_at: doc.metadata.updated_at,
+                tags: doc.metadata.tags,
+            })),
+            Err(e) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to fetch created vector".to_string(),
+                    message: e.to_string(),
+                }),
+            )),
+        },
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Failed to create vector".to_string(),
+                message: e.to_string(),
+            }),
+        )),
+    }
+}
+
+/// POST /search/text — embed text and search for similar vectors
+async fn search_by_text(
+    State(state): State<AppState>,
+    Json(request): Json<SearchByTextRequest>,
+) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let embedder = require_embedder(&state)?;
+
+    let vector_data = embedder.embed(&request.text).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Embedding failed".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    let vector = Array1::from_vec(vector_data);
+    let top_k = request.top_k.unwrap_or(10).clamp(1, 10000);
+    let metadata_filter = request.filter.as_ref().and_then(|f| f.to_metadata_filter());
+
+    let start_time = std::time::Instant::now();
+    let db = state.db.read().await;
+
+    let search_result = if metadata_filter.is_some() {
+        db.search_with_filter(vector, top_k, metadata_filter.as_ref())
+    } else {
+        db.search_similar(vector, top_k)
+    };
+
+    match search_result {
+        Ok(results) => {
+            let total_time = start_time.elapsed().as_secs_f64() * 1000.0;
+            Ok(Json(SearchResponse {
+                results,
+                total_time_ms: total_time,
+            }))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Search failed".to_string(),
+                message: e.to_string(),
+            }),
+        )),
+    }
+}
+
+/// POST /vectors/text/batch — embed and store multiple texts at once
+async fn batch_create_from_text(
+    State(state): State<AppState>,
+    Json(request): Json<BatchCreateFromTextRequest>,
+) -> Result<Json<BatchCreateResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let embedder = require_embedder(&state)?;
+
+    let texts: Vec<&str> = request.documents.iter().map(|d| d.text.as_str()).collect();
+
+    let embeddings = embedder.embed_batch(&texts).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Batch embedding failed".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    let mut db = state.db.write().await;
+    let mut created = 0;
+    let mut errors = Vec::new();
+
+    for (doc, embedding) in request.documents.iter().zip(embeddings.into_iter()) {
+        let vector = Array1::from_vec(embedding);
+        let mut tags = doc.tags.clone().unwrap_or_default();
+        tags.insert("_text".to_string(), doc.text.clone());
+
+        match db.create_vector(doc.id.clone(), vector, Some(tags)) {
+            Ok(_) => created += 1,
+            Err(e) => errors.push(format!("{}: {}", doc.id, e)),
+        }
+    }
+
+    Ok(Json(BatchCreateResponse { created, errors }))
+}
+
 /// Start the API server
 pub async fn start_server(
     config: DatabaseConfig,
@@ -465,6 +699,7 @@ pub async fn start_server(
     let db = PersistentVectorDB::new(config).await?;
     let state = AppState {
         db: Arc::new(RwLock::new(db)),
+        embedder: None,
     };
 
     // Create router
@@ -502,6 +737,7 @@ mod tests {
         let request = SearchRequest {
             vector: vec![1.0, 2.0, 3.0],
             top_k: Some(5),
+            filter: None,
         };
 
         assert_eq!(request.vector.len(), 3);

@@ -18,6 +18,7 @@ vectradb-api = { path = "../api" }
 vectradb-storage = { path = "../storage" }
 vectradb-search = { path = "../search" }
 vectradb-components = { path = "../components" }
+vectradb-embeddings = { path = "../embeddings" }
 ndarray = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
