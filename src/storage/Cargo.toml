@@ -8,6 +8,10 @@ repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
+[features]
+default = []
+gpu = ["vectradb-search/gpu"]
+
 [dependencies]
 ndarray = { workspace = true }
 serde = { workspace = true }

@@ -11,7 +11,7 @@ include = ["src/**", "proto/**", "Cargo.toml", "build.rs", "README.md"]
 
 [features]
 default = []
-gpu = ["vectradb-search/gpu"]
+gpu = ["vectradb-search/gpu", "vectradb-storage/gpu", "vectradb-api/gpu"]
 
 [[bin]]
 name = "vectradb-server"

@@ -88,6 +88,70 @@ class VectraDBBench:
         results = r.json().get("results", [])
         return [int(res["id"].split("-")[1]) for res in results]
 
+    def has_gpu(self) -> bool:
+        """Check if the server has GPU search available."""
+        try:
+            r = self.session.post(
+                f"{self.url}/search/gpu",
+                json={"vector": [0.0], "top_k": 1},
+                timeout=2,
+            )
+            return r.status_code != 501  # 501 = not implemented
+        except Exception:
+            return False
+
+    def cleanup(self):
+        try:
+            ids_resp = self.session.get(f"{self.url}/vectors")
+            if ids_resp.ok:
+                ids = ids_resp.json()
+                if isinstance(ids, list):
+                    for vid in ids:
+                        self.session.delete(f"{self.url}/vectors/{vid}")
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# VectraDB GPU (brute-force on GPU via /search/gpu)
+# ---------------------------------------------------------------------------
+
+class VectraDBGpuBench:
+    name = "VectraDB GPU"
+
+    def __init__(self, base_url: str):
+        self.url = base_url.rstrip("/")
+        self.session = requests.Session()
+
+    def setup(self, dim: int):
+        pass  # server already running, vectors already inserted by VectraDBBench
+
+    def insert(self, vectors: np.ndarray) -> float:
+        # Re-use the same data already inserted by VectraDBBench
+        url = f"{self.url}/vectors/batch"
+        batch_size = 1000
+        t0 = time.perf_counter()
+        for start in range(0, len(vectors), batch_size):
+            end = min(start + batch_size, len(vectors))
+            batch = {
+                "vectors": [
+                    {"id": f"v-{i}", "vector": vectors[i].tolist(), "tags": {"bench": "true"}}
+                    for i in range(start, end)
+                ]
+            }
+            r = self.session.post(url, json=batch)
+            r.raise_for_status()
+        return time.perf_counter() - t0
+
+    def search(self, query: np.ndarray, k: int) -> list[int]:
+        r = self.session.post(
+            f"{self.url}/search/gpu",
+            json={"vector": query.tolist(), "top_k": k},
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        return [int(res["id"].split("-")[1]) for res in results]
+
     def cleanup(self):
         try:
             ids_resp = self.session.get(f"{self.url}/vectors")
@@ -346,7 +410,11 @@ def main():
         try:
             r = requests.get(f"{args.vectradb_url}/health", timeout=3)
             if r.ok:
-                benchmarks.append(VectraDBBench(args.vectradb_url))
+                vdb = VectraDBBench(args.vectradb_url)
+                benchmarks.append(vdb)
+                # Also add GPU benchmark if available
+                if "vectradb_gpu" not in skip and vdb.has_gpu():
+                    benchmarks.append(VectraDBGpuBench(args.vectradb_url))
             else:
                 print("WARNING: VectraDB not reachable, skipping.")
         except Exception:

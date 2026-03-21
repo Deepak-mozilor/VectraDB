@@ -215,10 +215,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("API key authentication: enabled");
     }
 
+    // Initialize GPU engine (optional)
+    #[cfg(feature = "gpu")]
+    let gpu_engine: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>> = {
+        match vectradb_search::gpu::GpuDistanceEngine::new(100_000) {
+            Some(engine) => {
+                println!("GPU acceleration: enabled (wgpu)");
+                Some(Arc::new(engine))
+            }
+            None => {
+                println!("GPU acceleration: no adapter found, disabled");
+                None
+            }
+        }
+    };
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
     let http_embedder = embedder.clone();
     let http_auth = auth_config.clone();
+    #[cfg(feature = "gpu")]
+    let http_gpu = gpu_engine.clone();
     let http_port = args.port;
 
     // Start HTTP server task
@@ -239,6 +256,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             db: http_db,
             embedder: http_embedder,
             auth: http_auth,
+            #[cfg(feature = "gpu")]
+            gpu: http_gpu,
         };
         let app = vectradb_api::create_router(state);
 
