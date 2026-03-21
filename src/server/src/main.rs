@@ -68,6 +68,22 @@ struct Args {
     /// Cache size
     #[arg(long, default_value = "1000")]
     cache_size: usize,
+
+    /// Embedding provider: ollama, openai, huggingface, cohere (disabled if not set)
+    #[arg(long)]
+    embedding_provider: Option<String>,
+
+    /// Embedding model name (e.g., nomic-embed-text, text-embedding-3-small)
+    #[arg(long, default_value = "nomic-embed-text")]
+    embedding_model: String,
+
+    /// Embedding API URL (e.g., http://localhost:11434 for Ollama)
+    #[arg(long)]
+    embedding_url: Option<String>,
+
+    /// Embedding API key (or use OPENAI_API_KEY / HF_API_KEY / COHERE_API_KEY env vars)
+    #[arg(long)]
+    embedding_api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -128,9 +144,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = PersistentVectorDB::new(config.clone()).await?;
     let db_arc = Arc::new(RwLock::new(db));
 
+    // Initialize embedding provider (optional)
+    let embedder: Option<std::sync::Arc<dyn vectradb_embeddings::EmbeddingProvider>> =
+        if let Some(provider_name) = &args.embedding_provider {
+            let emb_config = vectradb_embeddings::EmbeddingConfig {
+                provider: provider_name.clone(),
+                model: args.embedding_model.clone(),
+                api_url: args.embedding_url.clone(),
+                api_key: args.embedding_api_key.clone(),
+                dimension: Some(args.dimension),
+            };
+            match vectradb_embeddings::create_provider(&emb_config) {
+                Ok(provider) => {
+                    println!(
+                        "Embedding provider: {} (model: {})",
+                        provider.provider_name(),
+                        provider.model_name()
+                    );
+                    Some(std::sync::Arc::from(provider))
+                }
+                Err(e) => {
+                    eprintln!("Failed to initialize embedding provider: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
-    let _http_config = config.clone();
+    let http_embedder = embedder.clone();
     let http_port = args.port;
 
     // Start HTTP server task
@@ -147,7 +191,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             http_port
         );
 
-        let state = vectradb_api::AppState { db: http_db };
+        let state = vectradb_api::AppState {
+            db: http_db,
+            embedder: http_embedder,
+        };
         let app = vectradb_api::create_router(state);
 
         if let Err(e) = axum::serve(listener, app).await {

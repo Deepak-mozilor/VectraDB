@@ -8,6 +8,7 @@ members = [
     "src/api",
     "src_py",
     "src/server",
+    "src/embeddings",
     "tests"
 ]
 

@@ -1,0 +1,16 @@
+[package]
+name = "vectradb-embeddings"
+version = "0.1.0"
+edition = "2021"
+description = "Embedding model providers for VectraDB"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+async-trait = "0.1"

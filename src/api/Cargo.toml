@@ -20,6 +20,7 @@ tower-http = { workspace = true }
 vectradb-components = { path = "../components" }
 vectradb-storage = { path = "../storage" }
 vectradb-search = { path = "../search" }
+vectradb-embeddings = { path = "../embeddings" }
 clap = { workspace = true }
 env_logger = { workspace = true }
 tempfile = { workspace = true }
