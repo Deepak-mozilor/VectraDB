@@ -80,6 +80,7 @@ impl PersistentVectorDB {
                 shard_length: config.index_config.shard_length.unwrap_or(64),
                 m: config.index_config.m,
                 ef_construction: config.index_config.ef_construction,
+                search_ef: config.index_config.search_ef,
                 ..Default::default()
             })),
             _ => {

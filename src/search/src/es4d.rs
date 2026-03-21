@@ -47,6 +47,8 @@ pub struct ES4DConfig {
     pub enable_det: bool,
     /// Enable dimension reordering by variance.
     pub enable_dimension_reorder: bool,
+    /// HNSW ef parameter used during search (higher = better recall, slower).
+    pub search_ef: usize,
 }
 
 impl Default for ES4DConfig {
@@ -59,6 +61,7 @@ impl Default for ES4DConfig {
             enable_cet: true,
             enable_det: true,
             enable_dimension_reorder: true,
+            search_ef: 50,
         }
     }
 }
@@ -608,7 +611,7 @@ impl AdvancedSearch for ES4DIndex {
         // Reorder query dimensions to match stored vectors
         let q = Self::reorder_vector(query, &self.dimension_order);
 
-        let ef = (k * 2).max(self.config.ef_construction / 4).max(10);
+        let ef = self.config.search_ef.max(k);
         let entries = self.search_graph_internal(&q, ef, true, k);
 
         let results = entries
@@ -829,6 +832,7 @@ mod tests {
             enable_cet: false,
             enable_det: true,
             enable_dimension_reorder: false,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 
@@ -863,6 +867,7 @@ mod tests {
             enable_cet: true,
             enable_det: true,
             enable_dimension_reorder: true,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 
@@ -909,6 +914,7 @@ mod tests {
             enable_cet: false,
             enable_det: true,
             enable_dimension_reorder: false,
+            search_ef: 50,
         };
         let mut index = ES4DIndex::new(config);
 

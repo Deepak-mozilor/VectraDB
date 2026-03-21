@@ -125,6 +125,35 @@ class FAISSBench:
 
 
 # ---------------------------------------------------------------------------
+# FAISS HNSW (approximate — fair comparison to VectraDB's HNSW)
+# ---------------------------------------------------------------------------
+
+class FAISSHNSWBench:
+    name = "FAISS HNSW"
+
+    def __init__(self):
+        self.index = None
+
+    def setup(self, dim: int):
+        import faiss
+        self.index = faiss.IndexHNSWFlat(dim, 16)  # M=16, same as VectraDB
+        self.index.hnsw.efConstruction = 200
+        self.index.hnsw.efSearch = 200
+
+    def insert(self, vectors: np.ndarray) -> float:
+        t0 = time.perf_counter()
+        self.index.add(vectors)
+        return time.perf_counter() - t0
+
+    def search(self, query: np.ndarray, k: int) -> list[int]:
+        D, I = self.index.search(query.reshape(1, -1), k)
+        return I[0].tolist()
+
+    def cleanup(self):
+        self.index = None
+
+
+# ---------------------------------------------------------------------------
 # Chroma (HNSW with L2)
 # ---------------------------------------------------------------------------
 
@@ -322,6 +351,9 @@ def main():
 
     if "faiss" not in skip:
         benchmarks.append(FAISSBench())
+
+    if "faiss_hnsw" not in skip:
+        benchmarks.append(FAISSHNSWBench())
 
     if "chroma" not in skip:
         benchmarks.append(ChromaBench())
