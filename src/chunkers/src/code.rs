@@ -31,6 +31,7 @@ impl CodeChunker {
     }
 
     /// Detects the programming language from file extension or content
+    #[allow(clippy::unused_self)]
     fn detect_language(&self, filename: Option<&str>, content: &str) -> String {
         if let Some(filename) = filename {
             let ext = filename.split('.').next_back().unwrap_or("").to_lowercase();

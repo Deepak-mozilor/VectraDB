@@ -3,7 +3,8 @@ use ndarray::Array1;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Indexing strategies for efficient vector search
+/// Indexing strategies for efficient vector search.
+///
 /// Basic linear index - scans all vectors (O(n) search time)
 pub struct LinearIndex {
     vectors: Vec<VectorDocument>,

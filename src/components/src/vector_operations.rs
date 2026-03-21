@@ -3,7 +3,6 @@ use ndarray::Array1;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Vector operations module - Core CRUD operations for vectors
 /// Create a new vector document
 pub fn create_vector_document(
     id: String,
@@ -12,7 +11,7 @@ pub fn create_vector_document(
 ) -> Result<VectorDocument, VectraDBError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     let metadata = VectorMetadata {
@@ -45,7 +44,7 @@ pub fn update_vector_document(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     // Update metadata

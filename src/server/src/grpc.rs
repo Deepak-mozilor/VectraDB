@@ -165,7 +165,10 @@ impl VectraDb for VectraDbService {
     ) -> Result<Response<SearchResponse>, Status> {
         let req = request.into_inner();
         let vector = Array1::from_vec(req.vector);
-        let top_k = req.top_k as usize;
+        if vector.is_empty() {
+            return Err(Status::invalid_argument("query vector must not be empty"));
+        }
+        let top_k = (req.top_k as usize).clamp(1, 10000);
 
         let start_time = std::time::Instant::now();
         let db = self.db.read().await;

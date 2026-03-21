@@ -12,6 +12,8 @@ pub enum VectraDBError {
     DimensionMismatch { expected: usize, actual: usize },
     #[error("Vector not found: {id}")]
     VectorNotFound { id: String },
+    #[error("Vector already exists: {id}")]
+    DuplicateVector { id: String },
     #[error("Invalid vector data")]
     InvalidVector,
     #[error("Database error: {0}")]

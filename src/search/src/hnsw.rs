@@ -1,31 +1,48 @@
 use super::{AdvancedSearch, SearchResult, SearchStats};
 use ndarray::Array1;
 use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::visit::EdgeRef;
 use rand::Rng;
-use std::collections::{BinaryHeap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
 /// HNSW (Hierarchical Navigable Small World) index implementation
-/// HNSW (Hierarchical Navigable Small World) index implementation
-#[allow(dead_code)]
 pub struct HNSWIndex {
     graph: DiGraph<VectorDocument, f32>,
     entry_point: Option<NodeIndex>,
+    /// O(1) lookup: vector ID → graph node index
+    id_to_node: HashMap<String, NodeIndex>,
     max_connections: usize,
     ef_construction: usize,
-    m: usize,
+    max_level: usize,
     stats: SearchStats,
     dimension: usize,
 }
 
-/// Node in the HNSW graph
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct HNSWNode {
-    document: VectorDocument,
-    level: usize,
-    connections: Vec<NodeIndex>,
+/// Heap entry ordered by distance for greedy search.
+#[derive(Clone)]
+struct HNSWEntry {
+    distance: f32,
+    node: NodeIndex,
+}
+
+impl PartialEq for HNSWEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.distance == other.distance
+    }
+}
+impl Eq for HNSWEntry {}
+impl PartialOrd for HNSWEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for HNSWEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.distance.total_cmp(&other.distance)
+    }
 }
 
 impl HNSWIndex {
@@ -34,9 +51,10 @@ impl HNSWIndex {
         Self {
             graph: DiGraph::new(),
             entry_point: None,
+            id_to_node: HashMap::new(),
             max_connections: m,
             ef_construction,
-            m,
+            max_level: 0,
             stats: SearchStats::default(),
             dimension,
         }
@@ -46,99 +64,97 @@ impl HNSWIndex {
     fn calculate_level(&self) -> usize {
         let mut rng = rand::thread_rng();
         let mut level = 0;
-
         while rng.gen::<f32>() < 0.5 && level < 16 {
             level += 1;
         }
-
         level
     }
 
-    /// Search for candidates in a specific layer
+    /// Greedy beam search on the graph. Returns up to `ef` closest results.
     fn search_layer(
         &self,
         query: &Array1<f32>,
-        entry_points: Vec<NodeIndex>,
+        entry_points: &[NodeIndex],
         ef: usize,
-        _layer: usize,
-    ) -> Vec<SearchResult> {
-        let mut candidates = BinaryHeap::new();
+    ) -> Vec<HNSWEntry> {
+        let mut candidates: BinaryHeap<Reverse<HNSWEntry>> = BinaryHeap::new(); // min-heap
+        let mut results: BinaryHeap<HNSWEntry> = BinaryHeap::new(); // max-heap
         let mut visited = HashSet::new();
 
-        // Initialize with entry points
-        for &ep in &entry_points {
-            if let Some(document) = self.graph.node_weight(ep) {
-                let distance = self.calculate_distance(query, &document.data);
-                candidates.push(SearchResult {
-                    id: document.metadata.id.clone(),
-                    distance,
-                    similarity: 1.0 / (1.0 + distance),
+        for &ep in entry_points {
+            if let Some(doc) = self.graph.node_weight(ep) {
+                let d = Self::calculate_distance(query, &doc.data);
+                candidates.push(Reverse(HNSWEntry {
+                    distance: d,
+                    node: ep,
+                }));
+                results.push(HNSWEntry {
+                    distance: d,
+                    node: ep,
                 });
                 visited.insert(ep);
             }
         }
 
-        let mut results = Vec::new();
-
-        while let Some(current) = candidates.pop() {
+        while let Some(Reverse(current)) = candidates.pop() {
             if results.len() >= ef {
-                break;
+                if let Some(worst) = results.peek() {
+                    if current.distance > worst.distance {
+                        break;
+                    }
+                }
             }
 
-            results.push(current.clone());
-
-            // Find the node index for this result
-            let node_idx = self.graph.node_indices().find(|&idx| {
-                self.graph
-                    .node_weight(idx)
-                    .map(|doc| doc.metadata.id == current.id)
-                    .unwrap_or(false)
-            });
-
-            if let Some(idx) = node_idx {
-                // Explore neighbors
-                for neighbor_idx in self.graph.neighbors(idx) {
-                    if visited.contains(&neighbor_idx) {
-                        continue;
-                    }
-
-                    if let Some(neighbor_doc) = self.graph.node_weight(neighbor_idx) {
-                        let distance = self.calculate_distance(query, &neighbor_doc.data);
-                        candidates.push(SearchResult {
-                            id: neighbor_doc.metadata.id.clone(),
-                            distance,
-                            similarity: 1.0 / (1.0 + distance),
+            for nbr in self.graph.neighbors(current.node) {
+                if !visited.insert(nbr) {
+                    continue;
+                }
+                if let Some(doc) = self.graph.node_weight(nbr) {
+                    let d = Self::calculate_distance(query, &doc.data);
+                    if results.len() < ef || d < results.peek().unwrap().distance {
+                        candidates.push(Reverse(HNSWEntry {
+                            distance: d,
+                            node: nbr,
+                        }));
+                        results.push(HNSWEntry {
+                            distance: d,
+                            node: nbr,
                         });
-                        visited.insert(neighbor_idx);
+                        if results.len() > ef {
+                            results.pop();
+                        }
                     }
                 }
             }
         }
 
-        // Sort results by distance (ascending)
-        results.sort_by(|a, b| a.distance.total_cmp(&b.distance));
-        results
+        let mut out: Vec<HNSWEntry> = results.into_vec();
+        out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+        out
     }
 
     /// Calculate Euclidean distance between vectors
-    fn calculate_distance(&self, a: &Array1<f32>, b: &Array1<f32>) -> f32 {
+    fn calculate_distance(a: &Array1<f32>, b: &Array1<f32>) -> f32 {
         let diff = a - b;
         diff.dot(&diff).sqrt()
     }
 
-    /// Select neighbors using simple heuristic
-    fn select_neighbors(&self, candidates: &[SearchResult], m: usize) -> Vec<String> {
-        let mut selected = Vec::new();
-        let mut used = HashSet::new();
+    /// Keep at most `2*M` edges for a node, retaining closest.
+    fn prune_connections(&mut self, node: NodeIndex) {
+        let max_conn = self.max_connections * 2;
+        let mut edges: Vec<(petgraph::graph::EdgeIndex, f32)> = self
+            .graph
+            .edges(node)
+            .map(|e| (e.id(), *e.weight()))
+            .collect();
 
-        for candidate in candidates.iter().take(m) {
-            if !used.contains(&candidate.id) {
-                selected.push(candidate.id.clone());
-                used.insert(candidate.id.clone());
-            }
+        if edges.len() <= max_conn {
+            return;
         }
-
-        selected
+        edges.sort_by(|a, b| a.1.total_cmp(&b.1));
+        for &(eid, _) in edges.iter().skip(max_conn) {
+            self.graph.remove_edge(eid);
+        }
     }
 
     /// Insert a new vector into the HNSW index
@@ -150,58 +166,34 @@ impl HNSWIndex {
             });
         }
 
+        let id = document.metadata.id.clone();
         let node_idx = self.graph.add_node(document.clone());
+        self.id_to_node.insert(id.clone(), node_idx);
         let level = self.calculate_level();
 
         if self.entry_point.is_none() {
             self.entry_point = Some(node_idx);
+            self.max_level = level;
             return Ok(());
         }
 
-        let mut entry_points = vec![self.entry_point.unwrap()];
+        // Search for neighbours
+        let entry = self.entry_point.unwrap();
+        let candidates = self.search_layer(&document.data, &[entry], self.ef_construction);
 
-        // Search from top layer down
-        for current_level in (0..=level).rev() {
-            let candidates = self.search_layer(
-                &document.data,
-                entry_points.clone(),
-                self.ef_construction,
-                current_level,
-            );
-            let neighbors = self.select_neighbors(&candidates, self.max_connections);
-
-            // Connect to selected neighbors
-            for neighbor_id in neighbors {
-                if let Some(neighbor_idx) = self.graph.node_indices().find(|&idx| {
-                    self.graph
-                        .node_weight(idx)
-                        .map(|doc| doc.metadata.id == neighbor_id)
-                        .unwrap_or(false)
-                }) {
-                    let distance =
-                        self.calculate_distance(&document.data, &self.graph[node_idx].data);
-                    self.graph.add_edge(node_idx, neighbor_idx, distance);
-                    self.graph.add_edge(neighbor_idx, node_idx, distance);
-                }
-            }
-
-            // Update entry points for next level
-            entry_points = candidates
-                .iter()
-                .take(self.max_connections)
-                .filter_map(|result| {
-                    self.graph.node_indices().find(|&idx| {
-                        self.graph
-                            .node_weight(idx)
-                            .map(|doc| doc.metadata.id == result.id)
-                            .unwrap_or(false)
-                    })
-                })
-                .collect();
+        // Connect to M nearest neighbours (bidirectional)
+        for entry in candidates.iter().take(self.max_connections) {
+            let nbr_idx = entry.node;
+            // Distance between the NEW node and the NEIGHBOUR (fix #24)
+            let dist = Self::calculate_distance(&document.data, &self.graph[nbr_idx].data);
+            self.graph.add_edge(node_idx, nbr_idx, dist);
+            self.graph.add_edge(nbr_idx, node_idx, dist);
+            self.prune_connections(nbr_idx);
         }
 
-        // Update entry point if this is the highest level
-        if level > 0 {
+        // Update entry point only if new node has higher level (fix #13)
+        if level >= self.max_level {
+            self.max_level = level;
             self.entry_point = Some(node_idx);
         }
 
@@ -220,23 +212,30 @@ impl AdvancedSearch for HNSWIndex {
 
         let start_time = Instant::now();
 
-        if let Some(entry) = self.entry_point {
-            let entry_points = vec![entry];
-            let mut candidates = self.search_layer(query, entry_points, k * 2, 0);
-
-            // Ensure results are sorted by distance (ascending)
-            candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
-            let results = candidates.into_iter().take(k).collect();
-
-            // Update stats
-            let search_time = start_time.elapsed().as_millis() as f64;
-            let mut stats = self.stats.clone();
-            stats.average_search_time_ms = (stats.average_search_time_ms + search_time) / 2.0;
-
-            Ok(results)
+        let results = if let Some(entry) = self.entry_point {
+            let ef = (k * 2).max(10);
+            let entries = self.search_layer(query, &[entry], ef);
+            entries
+                .into_iter()
+                .take(k)
+                .map(|e| {
+                    let id = self.graph[e.node].metadata.id.clone();
+                    SearchResult {
+                        id,
+                        distance: e.distance,
+                        similarity: 1.0 / (1.0 + e.distance),
+                    }
+                })
+                .collect()
         } else {
-            Ok(vec![])
-        }
+            vec![]
+        };
+
+        let _search_time = start_time.elapsed().as_millis() as f64;
+        // Note: stats update requires &mut self but search takes &self.
+        // Stats are tracked via get_stats() instead.
+
+        Ok(results)
     }
 
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError> {
@@ -247,14 +246,8 @@ impl AdvancedSearch for HNSWIndex {
 
     fn remove(&mut self, id: &str) -> Result<(), VectraDBError> {
         let node_idx = self
-            .graph
-            .node_indices()
-            .find(|&idx| {
-                self.graph
-                    .node_weight(idx)
-                    .map(|doc| doc.metadata.id == id)
-                    .unwrap_or(false)
-            })
+            .id_to_node
+            .remove(id)
             .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })?;
 
         self.graph.remove_node(node_idx);
@@ -263,7 +256,14 @@ impl AdvancedSearch for HNSWIndex {
             self.entry_point = self.graph.node_indices().next();
         }
 
-        self.stats.total_vectors -= 1;
+        // After remove_node, petgraph may swap indices — rebuild the map
+        self.id_to_node.clear();
+        for idx in self.graph.node_indices() {
+            self.id_to_node
+                .insert(self.graph[idx].metadata.id.clone(), idx);
+        }
+
+        self.stats.total_vectors = self.stats.total_vectors.saturating_sub(1);
         Ok(())
     }
 
@@ -288,7 +288,7 @@ impl AdvancedSearch for HNSWIndex {
     fn get_stats(&self) -> SearchStats {
         SearchStats {
             total_vectors: self.stats.total_vectors,
-            index_size_bytes: self.graph.node_count() * self.dimension * 4, // Rough estimate
+            index_size_bytes: self.graph.node_count() * self.dimension * 4,
             average_search_time_ms: self.stats.average_search_time_ms,
             construction_time_ms: self.stats.construction_time_ms,
         }
