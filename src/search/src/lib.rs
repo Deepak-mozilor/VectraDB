@@ -15,11 +15,15 @@ pub mod pq;
 /// ES4D: Exact Similarity Search via Vector Slicing, adapted for HNSW
 pub mod es4d;
 
+/// TensorSearch: Parallel Similarity Search on multi-dimensional tensors
+pub mod tensor;
+
 pub use es4d::{ES4DConfig, ES4DIndex};
 /// Re-export search algorithms
 pub use hnsw::HNSWIndex;
 pub use lsh::LSHIndex;
 pub use pq::PQIndex;
+pub use tensor::TensorSearchEngine;
 
 /// Search configuration for different algorithms
 #[derive(Debug, Clone, Serialize, Deserialize)]

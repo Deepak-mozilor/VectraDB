@@ -103,6 +103,7 @@ pub struct DatabaseStats {
 pub mod indexing;
 pub mod similarity;
 pub mod storage;
+pub mod tensor;
 pub mod vector_operations;
 
 // Re-export main functionality
