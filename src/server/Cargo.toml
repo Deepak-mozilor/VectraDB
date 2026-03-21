@@ -14,10 +14,10 @@ name = "vectradb-server"
 path = "src/main.rs"
 
 [dependencies]
-vectradb-api = "0.1.0"
-vectradb-storage = "0.1.0"
-vectradb-search = "0.1.0"
-vectradb-components = "0.1.0"
+vectradb-api = { path = "../api" }
+vectradb-storage = { path = "../storage" }
+vectradb-search = { path = "../search" }
+vectradb-components = { path = "../components" }
 ndarray = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }

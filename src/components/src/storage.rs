@@ -29,7 +29,7 @@ impl InMemoryVectorDB {
 
     /// Get current memory usage (approximate)
     fn calculate_memory_usage(&self) -> u64 {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let mut total_size = 0;
 
         for (id, doc) in vectors.iter() {
@@ -69,9 +69,9 @@ impl VectorDatabase for InMemoryVectorDB {
 
         let doc = crate::vector_operations::create_vector_document(id.clone(), vector, tags)?;
 
-        let mut vectors = self.vectors.write().unwrap();
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         if vectors.contains_key(&id) {
-            return Err(VectraDBError::VectorNotFound { id }); // Vector already exists
+            return Err(VectraDBError::DuplicateVector { id });
         }
 
         vectors.insert(id, doc);
@@ -79,7 +79,7 @@ impl VectorDatabase for InMemoryVectorDB {
     }
 
     fn get_vector(&self, id: &str) -> Result<VectorDocument, VectraDBError> {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         vectors
             .get(id)
             .cloned()
@@ -102,7 +102,7 @@ impl VectorDatabase for InMemoryVectorDB {
             }
         }
 
-        let mut vectors = self.vectors.write().unwrap();
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         let doc = vectors
             .get_mut(id)
             .ok_or_else(|| VectraDBError::VectorNotFound { id: id.to_string() })?;
@@ -114,7 +114,7 @@ impl VectorDatabase for InMemoryVectorDB {
     }
 
     fn delete_vector(&mut self, id: &str) -> Result<(), VectraDBError> {
-        let mut vectors = self.vectors.write().unwrap();
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
         vectors
             .remove(id)
             .map(|_| ())
@@ -140,7 +140,7 @@ impl VectorDatabase for InMemoryVectorDB {
             self.dimension = Some(vector.len());
         }
 
-        let mut vectors = self.vectors.write().unwrap();
+        let mut vectors = self.vectors.write().unwrap_or_else(|e| e.into_inner());
 
         use std::collections::hash_map::Entry;
         match vectors.entry(id.clone()) {
@@ -168,19 +168,19 @@ impl VectorDatabase for InMemoryVectorDB {
         query_vector: Array1<f32>,
         top_k: usize,
     ) -> Result<Vec<crate::SimilarityResult>, VectraDBError> {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let documents: Vec<VectorDocument> = vectors.values().cloned().collect();
 
         crate::similarity::find_similar_vectors_cosine(&query_vector.view(), &documents, top_k)
     }
 
     fn list_vectors(&self) -> Result<Vec<String>, VectraDBError> {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         Ok(vectors.keys().cloned().collect())
     }
 
     fn get_stats(&self) -> Result<DatabaseStats, VectraDBError> {
-        let vectors = self.vectors.read().unwrap();
+        let vectors = self.vectors.read().unwrap_or_else(|e| e.into_inner());
         let total_vectors = vectors.len();
         let dimension = self.dimension.unwrap_or(0);
         let memory_usage = self.calculate_memory_usage();

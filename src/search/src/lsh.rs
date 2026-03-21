@@ -177,10 +177,8 @@ impl AdvancedSearch for LSHIndex {
         candidates.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         candidates.truncate(k);
 
-        // Update stats
-        let search_time = start_time.elapsed().as_millis() as f64;
-        let mut stats = self.stats.clone();
-        stats.average_search_time_ms = (stats.average_search_time_ms + search_time) / 2.0;
+        let _search_time = start_time.elapsed().as_millis() as f64;
+        // Note: stats update requires &mut self but search takes &self.
 
         Ok(candidates)
     }

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use vectradb_components::{DatabaseStats, SimilarityResult, VectorDatabase, VectraDBError};
 use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 
@@ -81,7 +81,17 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/:id/upsert", put(upsert_vector))
         .route("/search", post(search_vectors))
         .route("/vectors", get(list_vectors))
-        .layer(CorsLayer::permissive())
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PUT,
+                    axum::http::Method::DELETE,
+                ])
+                .allow_headers(Any),
+        )
         .with_state(state)
 }
 
@@ -110,11 +120,37 @@ async fn get_stats(
     }
 }
 
+/// Validate vector data at the API boundary
+fn validate_request_vector(values: &[f32]) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    if values.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Invalid vector".to_string(),
+                message: "Vector must not be empty".to_string(),
+            }),
+        ));
+    }
+    for &v in values {
+        if !v.is_finite() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Invalid vector".to_string(),
+                    message: "Vector contains NaN or infinite values".to_string(),
+                }),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Create a new vector
 async fn create_vector(
     State(state): State<AppState>,
     Json(request): Json<CreateVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    validate_request_vector(&request.vector)?;
     let vector = Array1::from_vec(request.vector);
 
     let mut db = state.db.write().await;
@@ -187,6 +223,7 @@ async fn update_vector(
     Path(id): Path<String>,
     Json(request): Json<UpdateVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    validate_request_vector(&request.vector)?;
     let vector = Array1::from_vec(request.vector);
 
     let mut db = state.db.write().await;
@@ -259,6 +296,7 @@ async fn upsert_vector(
     Path(id): Path<String>,
     Json(request): Json<UpsertVectorRequest>,
 ) -> Result<Json<VectorResponse>, (StatusCode, Json<ErrorResponse>)> {
+    validate_request_vector(&request.vector)?;
     let vector = Array1::from_vec(request.vector);
 
     let mut db = state.db.write().await;
@@ -298,8 +336,9 @@ async fn search_vectors(
     State(state): State<AppState>,
     Json(request): Json<SearchRequest>,
 ) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    validate_request_vector(&request.vector)?;
     let vector = Array1::from_vec(request.vector);
-    let top_k = request.top_k.unwrap_or(10);
+    let top_k = request.top_k.unwrap_or(10).clamp(1, 10000);
 
     let start_time = std::time::Instant::now();
     let db = state.db.read().await;

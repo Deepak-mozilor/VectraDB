@@ -1,7 +1,6 @@
 use crate::{SimilarityResult, VectorDocument, VectraDBError};
 use ndarray::ArrayView1;
 
-/// Similarity calculation functions for vector comparisons
 /// Calculate cosine similarity between two vectors
 pub fn cosine_similarity(a: &ArrayView1<f32>, b: &ArrayView1<f32>) -> Result<f32, VectraDBError> {
     if a.len() != b.len() {
@@ -83,7 +82,7 @@ pub fn find_similar_vectors_cosine(
         .collect();
 
     // Sort by similarity score (descending)
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    results.sort_by(|a, b| b.score.total_cmp(&a.score));
 
     // Take top-k results
     results.truncate(top_k);
@@ -115,7 +114,7 @@ pub fn find_similar_vectors_euclidean(
         .collect();
 
     // Sort by similarity score (descending)
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    results.sort_by(|a, b| b.score.total_cmp(&a.score));
 
     // Take top-k results
     results.truncate(top_k);
@@ -161,16 +160,15 @@ pub fn batch_similarity_search(
 ) -> Result<Vec<Vec<SimilarityResult>>, VectraDBError> {
     query_vectors
         .iter()
-        .map(|query_vector| {
-            match similarity_type {
-                SimilarityType::Cosine => {
-                    find_similar_vectors_cosine(query_vector, documents, top_k)
-                }
-                SimilarityType::Euclidean => {
-                    find_similar_vectors_euclidean(query_vector, documents, top_k)
-                }
-                _ => Err(VectraDBError::InvalidVector), // Not implemented yet
+        .map(|query_vector| match similarity_type {
+            SimilarityType::Cosine => find_similar_vectors_cosine(query_vector, documents, top_k),
+            SimilarityType::Euclidean => {
+                find_similar_vectors_euclidean(query_vector, documents, top_k)
             }
+            _ => Err(VectraDBError::DatabaseError(anyhow::anyhow!(
+                "Batch search not yet implemented for {:?}",
+                similarity_type
+            ))),
         })
         .collect()
 }
