@@ -98,6 +98,14 @@ struct Args {
     /// Also reads from VECTRADB_API_KEY_READONLY env var.
     #[arg(long)]
     api_key_readonly: Vec<String>,
+
+    /// TLS certificate file (PEM format). Enables HTTPS when set with --tls-key.
+    #[arg(long)]
+    tls_cert: Option<PathBuf>,
+
+    /// TLS private key file (PEM format). Enables HTTPS when set with --tls-cert.
+    #[arg(long)]
+    tls_key: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -215,35 +223,94 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("API key authentication: enabled");
     }
 
+    // Initialize GPU engine (optional)
+    #[cfg(feature = "gpu")]
+    let gpu_engine: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>> = {
+        match vectradb_search::gpu::GpuDistanceEngine::new(100_000) {
+            Some(engine) => {
+                println!("GPU acceleration: enabled (wgpu)");
+                Some(Arc::new(engine))
+            }
+            None => {
+                println!("GPU acceleration: no adapter found, disabled");
+                None
+            }
+        }
+    };
+
+    // TLS configuration
+    let tls_config = match (&args.tls_cert, &args.tls_key) {
+        (Some(cert), Some(key)) => {
+            println!(
+                "TLS: enabled (cert={}, key={})",
+                cert.display(),
+                key.display()
+            );
+            Some((cert.clone(), key.clone()))
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            eprintln!("Error: both --tls-cert and --tls-key must be provided together");
+            std::process::exit(1);
+        }
+        (None, None) => {
+            println!("TLS: disabled (use --tls-cert and --tls-key to enable)");
+            None
+        }
+    };
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
     let http_embedder = embedder.clone();
     let http_auth = auth_config.clone();
+    #[cfg(feature = "gpu")]
+    let http_gpu = gpu_engine.clone();
     let http_port = args.port;
+    let http_tls = tls_config.clone();
 
     // Start HTTP server task
     let http_handle = tokio::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port)).await {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("Failed to bind HTTP port {}: {}", http_port, e);
-                return;
-            }
-        };
-        println!(
-            "VectraDB HTTP API server running on http://0.0.0.0:{}",
-            http_port
-        );
-
         let state = vectradb_api::AppState {
             db: http_db,
             embedder: http_embedder,
             auth: http_auth,
+            #[cfg(feature = "gpu")]
+            gpu: http_gpu,
         };
         let app = vectradb_api::create_router(state);
+        let addr = format!("0.0.0.0:{}", http_port);
 
-        if let Err(e) = axum::serve(listener, app).await {
-            eprintln!("HTTP server error: {}", e);
+        if let Some((cert_path, key_path)) = http_tls {
+            // HTTPS with TLS
+            let tls =
+                match axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)
+                    .await
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("Failed to load TLS cert/key: {e}");
+                        return;
+                    }
+                };
+            println!("VectraDB HTTPS server running on https://{addr}");
+            if let Err(e) = axum_server::bind_rustls(addr.parse().unwrap(), tls)
+                .serve(app.into_make_service())
+                .await
+            {
+                eprintln!("HTTPS server error: {e}");
+            }
+        } else {
+            // Plain HTTP
+            let listener = match tokio::net::TcpListener::bind(&addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("Failed to bind HTTP port {http_port}: {e}");
+                    return;
+                }
+            };
+            println!("VectraDB HTTP server running on http://{addr}");
+            if let Err(e) = axum::serve(listener, app).await {
+                eprintln!("HTTP server error: {e}");
+            }
         }
     });
 
@@ -252,15 +319,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let grpc_addr = format!("0.0.0.0:{}", args.grpc_port).parse()?;
         let grpc_service = VectraDbService::new(db_arc).into_service();
 
-        println!("VectraDB gRPC server running on {}", grpc_addr);
-
         let grpc_handle = tokio::spawn(async move {
-            if let Err(e) = Server::builder()
-                .add_service(grpc_service)
-                .serve(grpc_addr)
-                .await
-            {
-                eprintln!("gRPC server error: {}", e);
+            let mut builder = Server::builder();
+
+            // Enable gRPC-TLS if cert/key provided
+            if let Some((cert_path, key_path)) = tls_config {
+                let cert_pem = std::fs::read_to_string(&cert_path).unwrap_or_else(|e| {
+                    eprintln!("Failed to read TLS cert for gRPC: {e}");
+                    std::process::exit(1);
+                });
+                let key_pem = std::fs::read_to_string(&key_path).unwrap_or_else(|e| {
+                    eprintln!("Failed to read TLS key for gRPC: {e}");
+                    std::process::exit(1);
+                });
+                let tls = tonic::transport::ServerTlsConfig::new()
+                    .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
+                builder = builder.tls_config(tls).unwrap_or_else(|e| {
+                    eprintln!("Failed to configure gRPC TLS: {e}");
+                    std::process::exit(1);
+                });
+                println!("VectraDB gRPC-TLS server running on {grpc_addr}");
+            } else {
+                println!("VectraDB gRPC server running on {grpc_addr}");
+            }
+
+            if let Err(e) = builder.add_service(grpc_service).serve(grpc_addr).await {
+                eprintln!("gRPC server error: {e}");
             }
         });
 

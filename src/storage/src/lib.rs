@@ -45,6 +45,11 @@ impl Default for DatabaseConfig {
 }
 
 impl PersistentVectorDB {
+    /// Get a reference to the database configuration.
+    pub fn config(&self) -> &DatabaseConfig {
+        &self.config
+    }
+
     /// Create a new persistent vector database
     pub async fn new(config: DatabaseConfig) -> Result<Self, VectraDBError> {
         let db = sled::open(&config.data_dir)
@@ -516,6 +521,127 @@ impl PersistentVectorDB {
             .flush()
             .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
         Ok(())
+    }
+
+    /// Hybrid GPU search: HNSW/ES4D fetches candidates on CPU, GPU re-ranks exactly.
+    ///
+    /// This combines the speed of graph-based search with GPU-exact distances,
+    /// achieving near-100% recall at HNSW-like latency.
+    #[cfg(feature = "gpu")]
+    pub fn search_gpu_rerank(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+        rerank_ef: usize,
+        gpu: &vectradb_search::gpu::GpuDistanceEngine,
+        metric: vectradb_search::DistanceMetric,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        let search_results =
+            self.index
+                .search_gpu_rerank(&query_vector, top_k, rerank_ef, gpu, metric)?;
+
+        let similarity_results = search_results
+            .into_iter()
+            .map(|result| {
+                let metadata = self
+                    .load_vector_sync(&result.id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: result.id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(similarity_results)
+    }
+
+    /// GPU brute-force search: compute distances on GPU for all stored vectors.
+    ///
+    /// This bypasses the HNSW index and instead sends all vectors to the GPU
+    /// for parallel distance computation, achieving 100% recall.
+    #[cfg(feature = "gpu")]
+    pub fn search_gpu(
+        &self,
+        query_vector: Array1<f32>,
+        top_k: usize,
+        gpu: &vectradb_search::gpu::GpuDistanceEngine,
+        metric: vectradb_search::DistanceMetric,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        let dim = query_vector.len();
+        let query_slice = query_vector
+            .as_slice()
+            .ok_or_else(|| VectraDBError::DatabaseError(anyhow::anyhow!("non-contiguous query")))?;
+
+        // Collect all stored vectors into a flat buffer + id list
+        let mut ids: Vec<String> = Vec::new();
+        let mut flat_data: Vec<f32> = Vec::new();
+
+        for entry in self.vectors_tree.iter() {
+            let (id_bytes, vec_bytes) =
+                entry.map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+
+            let id = String::from_utf8(id_bytes.to_vec())
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+
+            let data: Array1<f32> = bincode::deserialize(&vec_bytes)
+                .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
+
+            if let Some(s) = data.as_slice() {
+                flat_data.extend_from_slice(s);
+                ids.push(id);
+            }
+        }
+
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Run GPU distance computation
+        let distances = gpu.batch_distances(query_slice, &flat_data, dim, metric);
+
+        // Build (index, distance) pairs and sort
+        let mut scored: Vec<(usize, f32)> = distances.into_iter().enumerate().collect();
+        scored.sort_by(|a, b| a.1.total_cmp(&b.1));
+        scored.truncate(top_k);
+
+        // Convert to SimilarityResult with metadata
+        let results = scored
+            .into_iter()
+            .map(|(i, dist)| {
+                let id = &ids[i];
+                let similarity = match metric {
+                    vectradb_search::DistanceMetric::Cosine => 1.0 - dist,
+                    vectradb_search::DistanceMetric::DotProduct => -dist,
+                    vectradb_search::DistanceMetric::Euclidean => 1.0 / (1.0 + dist),
+                };
+                let metadata = self
+                    .load_vector_sync(id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                vectradb_components::SimilarityResult {
+                    id: id.clone(),
+                    score: similarity,
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(results)
     }
 }
 

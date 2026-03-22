@@ -11,7 +11,7 @@ include = ["src/**", "proto/**", "Cargo.toml", "build.rs", "README.md"]
 
 [features]
 default = []
-gpu = ["vectradb-search/gpu"]
+gpu = ["vectradb-search/gpu", "vectradb-storage/gpu", "vectradb-api/gpu"]
 
 [[bin]]
 name = "vectradb-server"
@@ -30,6 +30,9 @@ tokio = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 axum = { workspace = true }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
 
 [build-dependencies]
 tonic-build = { workspace = true }

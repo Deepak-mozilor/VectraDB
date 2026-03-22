@@ -29,6 +29,9 @@ pub struct AppState {
     pub embedder: Option<Arc<dyn vectradb_embeddings::EmbeddingProvider>>,
     /// Authentication configuration.
     pub auth: Arc<AuthConfig>,
+    /// GPU distance engine (optional, requires `gpu` feature).
+    #[cfg(feature = "gpu")]
+    pub gpu: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>>,
 }
 
 /// Request/Response types for API endpoints
@@ -168,6 +171,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/:id", delete(delete_vector))
         .route("/vectors/:id/upsert", put(upsert_vector))
         .route("/search", post(search_vectors))
+        .route("/search/gpu", post(search_gpu_handler))
         .route("/vectors", get(list_vectors))
         // Text-based endpoints (require embedding provider)
         .route("/embed", post(embed_text))
@@ -482,10 +486,28 @@ async fn search_vectors(
 
     let search_result = if metadata_filter.is_some() {
         db.search_with_filter(vector, top_k, metadata_filter.as_ref())
-    } else if let Some(ef) = ef_search {
-        db.search_similar_with_ef(vector, top_k, ef)
     } else {
-        db.search_similar(vector, top_k)
+        // Use GPU reranking when available for better recall
+        #[cfg(feature = "gpu")]
+        {
+            if let Some(gpu) = &state.gpu {
+                let metric = db.config().index_config.metric;
+                let rerank_ef = ef_search.unwrap_or(500).max(top_k * 10);
+                db.search_gpu_rerank(vector, top_k, rerank_ef, gpu, metric)
+            } else if let Some(ef) = ef_search {
+                db.search_similar_with_ef(vector, top_k, ef)
+            } else {
+                db.search_similar(vector, top_k)
+            }
+        }
+        #[cfg(not(feature = "gpu"))]
+        {
+            if let Some(ef) = ef_search {
+                db.search_similar_with_ef(vector, top_k, ef)
+            } else {
+                db.search_similar(vector, top_k)
+            }
+        }
     };
 
     match search_result {
@@ -503,6 +525,66 @@ async fn search_vectors(
                 message: e.to_string(),
             }),
         )),
+    }
+}
+
+/// GPU brute-force search (100% recall, requires `gpu` feature)
+async fn search_gpu_handler(
+    State(state): State<AppState>,
+    Json(request): Json<SearchRequest>,
+) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    #[cfg(not(feature = "gpu"))]
+    {
+        let _ = (state, request);
+        #[allow(clippy::needless_return)]
+        return Err((
+            StatusCode::NOT_IMPLEMENTED,
+            Json(ErrorResponse {
+                error: "GPU not available".to_string(),
+                message: "Server was not built with --features gpu".to_string(),
+            }),
+        ));
+    }
+
+    #[cfg(feature = "gpu")]
+    {
+        validate_request_vector(&request.vector)?;
+        let vector = Array1::from_vec(request.vector);
+        let top_k = request.top_k.unwrap_or(10).clamp(1, 10000);
+
+        let gpu = match &state.gpu {
+            Some(g) => g.clone(),
+            None => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(ErrorResponse {
+                        error: "GPU not initialized".to_string(),
+                        message: "No GPU adapter found on this system".to_string(),
+                    }),
+                ));
+            }
+        };
+
+        let start_time = std::time::Instant::now();
+        let db = state.db.read().await;
+        let metric = db.config().index_config.metric;
+
+        match db.search_gpu(vector, top_k, &gpu, metric) {
+            Ok(results) => {
+                let total_time = start_time.elapsed().as_secs_f64() * 1000.0;
+                Ok(Json(SearchResponse {
+                    results,
+                    total_time_ms: total_time,
+                }))
+            }
+            Err(e) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "GPU search failed".to_string(),
+                    message: e.to_string(),
+                }),
+            )),
+        }
     }
 }
 
@@ -761,6 +843,8 @@ pub async fn start_server(
         db: Arc::new(RwLock::new(db)),
         embedder: None,
         auth: Arc::new(AuthConfig::disabled()),
+        #[cfg(feature = "gpu")]
+        gpu: None,
     };
 
     // Create router

@@ -332,6 +332,75 @@ impl AdvancedSearch for HNSWIndex {
         Ok(results)
     }
 
+    #[cfg(feature = "gpu")]
+    fn search_gpu_rerank(
+        &self,
+        query: &Array1<f32>,
+        k: usize,
+        rerank_ef: usize,
+        gpu: &super::gpu::GpuDistanceEngine,
+        metric: DistanceMetric,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
+        if query.len() != self.dimension {
+            return Err(VectraDBError::DimensionMismatch {
+                expected: self.dimension,
+                actual: query.len(),
+            });
+        }
+
+        let entry = match self.entry_point {
+            Some(e) => e,
+            None => return Ok(vec![]),
+        };
+
+        // Step 1: HNSW fetches a large candidate pool on CPU
+        let ef = rerank_ef.max(k);
+        let candidates = self.search_layer(query, &[entry], ef);
+
+        if candidates.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Step 2: Collect candidate vectors into a flat buffer for GPU
+        let mut ids: Vec<String> = Vec::with_capacity(candidates.len());
+        let mut flat_data: Vec<f32> = Vec::with_capacity(candidates.len() * self.dimension);
+
+        for c in &candidates {
+            let doc = &self.graph[c.node];
+            ids.push(doc.metadata.id.clone());
+            if let Some(s) = doc.data.as_slice() {
+                flat_data.extend_from_slice(s);
+            }
+        }
+
+        // Step 3: GPU computes exact distances
+        let query_slice = query.as_slice().unwrap();
+        let distances = gpu.batch_distances(query_slice, &flat_data, self.dimension, metric);
+
+        // Step 4: Sort by distance and return top-k
+        let mut scored: Vec<(usize, f32)> = distances.into_iter().enumerate().collect();
+        scored.sort_by(|a, b| a.1.total_cmp(&b.1));
+        scored.truncate(k);
+
+        let results = scored
+            .into_iter()
+            .map(|(i, dist)| {
+                let similarity = match metric {
+                    DistanceMetric::Cosine => 1.0 - dist,
+                    DistanceMetric::DotProduct => -dist,
+                    DistanceMetric::Euclidean => 1.0 / (1.0 + dist),
+                };
+                SearchResult {
+                    id: ids[i].clone(),
+                    distance: dist,
+                    similarity,
+                }
+            })
+            .collect();
+
+        Ok(results)
+    }
+
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError> {
         self.insert_vector(document)?;
         self.stats.total_vectors += 1;
