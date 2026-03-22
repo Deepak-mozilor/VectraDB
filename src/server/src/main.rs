@@ -292,6 +292,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics_handle = vectradb_api::metrics::install_prometheus_recorder();
     println!("Prometheus metrics: enabled at /metrics");
 
+    // Graceful shutdown signal (SIGINT / SIGTERM)
+    let shutdown = async {
+        let ctrl_c = tokio::signal::ctrl_c();
+
+        #[cfg(unix)]
+        {
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("failed to register SIGTERM handler");
+            tokio::select! {
+                _ = ctrl_c => {},
+                _ = sigterm.recv() => {},
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            ctrl_c.await.ok();
+        }
+
+        println!("\nShutdown signal received. Draining in-flight requests...");
+    };
+
+    // Share the shutdown signal across servers via a notify
+    let shutdown_notify = Arc::new(tokio::sync::Notify::new());
+    let http_shutdown = shutdown_notify.clone();
+    let grpc_shutdown = shutdown_notify.clone();
+
+    // Flush database reference (for shutdown cleanup)
+    let flush_db = db_arc.clone();
+
     // Start HTTP server task
     let http_handle = tokio::spawn(async move {
         let state = vectradb_api::AppState {
@@ -326,7 +357,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("HTTPS server error: {e}");
             }
         } else {
-            // Plain HTTP
+            // Plain HTTP with graceful shutdown
             let listener = match tokio::net::TcpListener::bind(&addr).await {
                 Ok(l) => l,
                 Err(e) => {
@@ -335,7 +366,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             println!("VectraDB HTTP server running on http://{addr}");
-            if let Err(e) = axum::serve(listener, app).await {
+            if let Err(e) = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    http_shutdown.notified().await;
+                })
+                .await
+            {
                 eprintln!("HTTP server error: {e}");
             }
         }
@@ -370,24 +406,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("VectraDB gRPC server running on {grpc_addr}");
             }
 
-            if let Err(e) = builder.add_service(grpc_service).serve(grpc_addr).await {
+            // gRPC with graceful shutdown
+            if let Err(e) = builder
+                .add_service(grpc_service)
+                .serve_with_shutdown(grpc_addr, async move {
+                    grpc_shutdown.notified().await;
+                })
+                .await
+            {
                 eprintln!("gRPC server error: {e}");
             }
         });
 
-        // Wait for either server to exit
-        tokio::select! {
-            _ = http_handle => {
-                println!("HTTP server exited");
-            }
-            _ = grpc_handle => {
-                println!("gRPC server exited");
-            }
-        }
+        // Wait for shutdown signal, then notify both servers
+        shutdown.await;
+        shutdown_notify.notify_waiters();
+
+        // Wait for both servers to drain
+        let _ = tokio::join!(http_handle, grpc_handle);
     } else {
-        // Only HTTP server
-        http_handle.await?;
+        // Only HTTP server — wait for shutdown
+        shutdown.await;
+        shutdown_notify.notify_waiters();
+        let _ = http_handle.await;
     }
+
+    // Final flush to ensure all data is persisted
+    println!("Flushing database to disk...");
+    let db = flush_db.read().await;
+    if let Err(e) = db.flush() {
+        eprintln!("Warning: failed to flush database: {e}");
+    }
+    println!("VectraDB shutdown complete.");
 
     Ok(())
 }
