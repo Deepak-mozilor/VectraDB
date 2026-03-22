@@ -159,7 +159,7 @@ impl VectraDB {
     ) -> PyResult<(usize, usize)> {
         let batch: Vec<_> = ids
             .into_iter()
-            .zip(vectors.into_iter())
+            .zip(vectors)
             .enumerate()
             .map(|(i, (id, vec))| {
                 let t = tags.as_ref().and_then(|ts| ts.get(i).cloned()).flatten();
