@@ -76,15 +76,19 @@ cargo test -p vectradb-search -- es4d::tests::test_es4d_insert_and_search
 ## Project Structure
 
 ```
-src/components/   — Core types and traits (start here to understand the codebase)
-src/search/       — Search algorithms (HNSW, LSH, PQ, ES4D)
+src/vectradb/     — In-process library API (start here for library usage)
+src/components/   — Core types and traits (start here to understand internals)
+src/search/       — Search algorithms (HNSW, ES4D, IVF, SQ, LSH, PQ, SIMD, Tensor)
 src/storage/      — Persistent storage (Sled + search index)
-src/api/          — REST API (Axum)
-src/server/       — Server binary (HTTP + gRPC)
+src/api/          — REST API (Axum) + auth + rate limiting + metrics
+src/server/       — Server binary (HTTP + gRPC + TLS)
+src/embeddings/   — Embedding model providers (Ollama, OpenAI, HF, Cohere)
 src/chunkers/     — Text chunking utilities
-src_py/           — PyO3 Python bindings
+src/tfidf/        — TF-IDF sparse text retrieval
+src/rag/          — RAG pipeline
+src/eval/         — Evaluation framework
 proto/            — Protocol Buffer definitions
-python-client/    — Python gRPC client
+tests/            — Integration & stress tests
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed explanation of how components interact.

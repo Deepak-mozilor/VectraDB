@@ -24,68 +24,86 @@
 
 ---
 
-A high-performance vector database built in Rust. Store, search, and manage high-dimensional vectors with sub-millisecond query times.
+A high-performance vector database built in Rust. Use it as an **embedded library** (like SQLite) or as a **standalone server** with REST + gRPC APIs.
 
-VectraDB is designed for AI/ML workloads like semantic search, recommendation engines, and RAG (Retrieval-Augmented Generation) pipelines. It provides a REST API, gRPC API, and Python client out of the box.
-
-## What is a Vector Database?
-
-Modern AI models (like OpenAI, Cohere, or Hugging Face transformers) convert text, images, and other data into **vectors** -- arrays of numbers that capture semantic meaning. Similar items have similar vectors. A vector database lets you:
-
-1. **Store** millions of these vectors with metadata
-2. **Search** for the most similar vectors to a query (nearest neighbor search)
-3. **Retrieve** the original data associated with each vector
-
-For example, you could store document embeddings and then search for documents similar to a user's question -- this is how RAG systems work.
+VectraDB is designed for AI/ML workloads like semantic search, recommendation engines, and RAG pipelines. It supports 7 search algorithms, SIMD-accelerated distance computation, metadata filtering, built-in embedding model support, and multi-dimensional tensor search.
 
 ## Features
 
-- **4 Search Algorithms**: HNSW, LSH, Product Quantization, and ES4D (our custom algorithm)
-- **Dual API**: REST (HTTP) and gRPC running concurrently
-- **Persistent Storage**: Data survives restarts via Sled embedded database
-- **Python Client**: Sync and async gRPC client library
-- **Text Chunking**: Built-in utilities for splitting documents, code, and markdown
-- **Docker Ready**: Multi-stage Dockerfile included
+- **7 Search Algorithms** — HNSW, ES4D, IVF, SQ8, LSH, PQ, and TensorSearch
+- **Two modes** — In-process library (no server) or standalone server (REST + gRPC)
+- **SIMD acceleration** — AVX2, SSE, and NEON intrinsics for distance computation
+- **Metadata filtering** — `must` / `must_not` / `should` tag filters during search
+- **Embedding models** — Built-in Ollama, OpenAI, HuggingFace, Cohere integration
+- **Persistent storage** — Sled-backed, crash-safe, survives restarts
+- **Production ready** — Auth, TLS, rate limiting, Prometheus metrics, graceful shutdown
+- **Tensor search** — Native 2D/3D/nD similarity search (not just 1D vectors)
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: As a Library (no server needed)
 
-- [Rust](https://rustup.rs/) 1.70 or later
-- [Protocol Buffers compiler](https://grpc.io/docs/protoc-installation/) (`protoc`)
-
-**Install protoc:**
-
-```bash
-# macOS
-brew install protobuf
-
-# Ubuntu/Debian
-sudo apt install protobuf-compiler
-
-# Windows — download from https://github.com/protocolbuffers/protobuf/releases
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+vectradb = "0.1"
+tokio = { version = "1", features = ["full"] }
 ```
 
-### Build and Run
+```rust
+use vectradb::VectraDB;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Open or create a database
+    let mut db = VectraDB::open_with_dim("./my_vectors", 4).await?;
+
+    // Insert vectors with metadata
+    db.insert("doc1", &[0.1, 0.2, 0.3, 0.4], None)?;
+    db.insert("doc2", &[0.2, 0.3, 0.4, 0.5], None)?;
+
+    // Search for similar vectors
+    let results = db.search(&[0.15, 0.25, 0.35, 0.45], 5)?;
+    for r in &results {
+        println!("{}: score={:.4}", r.id, r.score);
+    }
+
+    // Data persists across restarts automatically
+    Ok(())
+}
+```
+
+Advanced configuration via builder:
+```rust
+use vectradb::{VectraDB, SearchAlgorithm, DistanceMetric};
+
+let db = VectraDB::builder("./my_db")
+    .dimension(384)
+    .algorithm(SearchAlgorithm::HNSW)
+    .metric(DistanceMetric::Cosine)
+    .hnsw_m(32)
+    .hnsw_ef_construction(200)
+    .build()
+    .await?;
+```
+
+### Option 2: As a Server (REST + gRPC)
 
 ```bash
-# Clone the repository
+# Prerequisites: Rust 1.70+, protoc
+# macOS: brew install protobuf
+# Ubuntu: sudo apt install protobuf-compiler
+
 git clone https://github.com/Amrithesh-Kakkoth/VectraDB.git
-cd VectraDB
+cd VectraDB && cargo build --release
 
-# Build in release mode
-cargo build --release
-
-# Start the server (both HTTP and gRPC)
-./target/release/vectradb-server --enable-grpc
+# Start server
+./target/release/vectradb-server --enable-grpc -d 384
 ```
 
-The server starts with these defaults:
+The server starts on:
 - HTTP REST API: `http://localhost:8080`
 - gRPC API: `localhost:50051`
-- Vector dimension: 384
-- Search algorithm: HNSW
-- Data directory: `./vectradb_data`
 
 ### Your First Vectors
 
@@ -151,14 +169,19 @@ Options:
 
 ## Search Algorithms
 
-VectraDB supports four search algorithms. Choose based on your needs:
+VectraDB supports 7 search algorithms. All use SIMD-accelerated distance computation (AVX2/SSE/NEON).
 
-| Algorithm | Speed | Memory | Accuracy | Best For |
-|-----------|-------|--------|----------|----------|
-| **HNSW** | Fast | High | High | General purpose (default) |
-| **ES4D** | Fast | High | Exact | High-dimensional vectors, when you need exact results |
-| **LSH** | Medium | Low | Approximate | Large datasets with memory constraints |
-| **PQ** | Fast | Very Low | Approximate | Huge datasets, when memory is critical |
+| Algorithm | Speed | Memory | Recall@10 | Best For |
+|-----------|:-----:|:------:|:---------:|---------|
+| **HNSW** | ⚡ Fast | High | 98.5% | General purpose (default) |
+| **ES4D** | ⚡ Fast | High | 100% | High-dimensional exact search |
+| **IVF** | ⚡⚡ Very fast | High | 73%* | Large datasets (1M+ vectors) |
+| **SQ8** | Medium | **4x smaller** | 100% | Memory-constrained deployments |
+| **LSH** | Medium | Low | 60% | Hash-based approximate search |
+| **PQ** | Fast | Very low | 35% | Extreme compression |
+| **TensorSearch** | — | — | — | 2D/3D/nD pattern matching |
+
+*IVF recall depends on `nprobe` (clusters searched). Higher nprobe = higher recall.
 
 ### HNSW (default)
 
@@ -180,19 +203,29 @@ Our implementation of the [ES4D paper](https://doi.org/10.1109/ICCD56317.2022.00
 ./target/release/vectradb-server -a es4d --shard-length 64
 ```
 
-### LSH (Locality Sensitive Hashing)
+### IVF (Inverted File Index)
 
-Hash-based approximate search. Uses random hyperplane hashing to group similar vectors.
+Partitions vectors into clusters, only searches the closest clusters per query. At 1M vectors with nprobe=10, searches ~1% of data.
 
 ```bash
-./target/release/vectradb-server -a lsh --num-hashes 10 --num-buckets 1000
+./target/release/vectradb-server -a ivf --ivf-nlist 256 --ivf-nprobe 16
 ```
 
-### PQ (Product Quantization)
+### SQ8 (Scalar Quantization)
 
-Compresses vectors into compact codes for memory-efficient search. Good when your dataset is too large for RAM.
+Compresses each dimension from f32 to uint8. **4x memory reduction** with virtually no recall loss.
 
 ```bash
+./target/release/vectradb-server -a sq
+```
+
+### LSH & PQ
+
+```bash
+# LSH — hash-based approximate search
+./target/release/vectradb-server -a lsh --num-hashes 10
+
+# PQ — extreme compression (k-means++ trained codebooks)
 ./target/release/vectradb-server -a pq
 ```
 
@@ -388,18 +421,22 @@ docker run -p 8080:8080 -p 50051:50051 \
 ```
 VectraDB/
 ├── src/
+│   ├── vectradb/         In-process library API (use without server)
 │   ├── components/       Core types, similarity math, vector operations
-│   ├── search/           Search algorithms (HNSW, LSH, PQ, ES4D)
+│   ├── search/           Search algorithms (HNSW, ES4D, IVF, SQ, LSH, PQ)
+│   │   └── simd.rs       SIMD-accelerated distance functions
 │   ├── storage/          Sled-based persistent storage
-│   ├── api/              Axum REST API handlers
-│   ├── server/           Server binary (HTTP + gRPC)
-│   └── chunkers/         Text chunking utilities
+│   ├── api/              Axum REST API + auth + rate limiting + metrics
+│   ├── server/           Server binary (HTTP + gRPC + TLS)
+│   ├── embeddings/       Embedding providers (Ollama, OpenAI, HF, Cohere)
+│   ├── chunkers/         Text chunking utilities
+│   ├── tfidf/            TF-IDF sparse text retrieval
+│   ├── rag/              RAG pipeline
+│   └── eval/             Evaluation framework
 ├── proto/                Protocol Buffer definitions
 ├── python-client/        Python gRPC client library
-├── src_py/               PyO3 native Python bindings
-├── bench/                Benchmarking scripts
-├── .github/workflows/    CI/CD (build, test, release, Docker)
-└── Cargo.toml            Workspace configuration
+├── tests/                Integration & stress tests (119+ tests)
+└── .github/workflows/    CI/CD (build, test, release, Docker)
 ```
 
 For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).

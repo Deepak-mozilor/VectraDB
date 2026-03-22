@@ -4,37 +4,49 @@ This document explains how VectraDB is structured, how data flows through the sy
 
 ## Overview
 
-VectraDB is a Rust workspace with 7 crates. Each crate has a single responsibility:
+VectraDB is a Rust workspace with 12+ crates. It can be used **two ways**:
+
+**As a library** (in-process, no server):
+```
+Your App → vectradb (crate) → vectradb-storage → vectradb-search → vectradb-components
+```
+
+**As a server** (REST + gRPC):
+```
+Client → vectradb-server → vectradb-api → vectradb-storage → vectradb-search → vectradb-components
+```
+
+### Crate dependency diagram
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      vectradb-server                     │
-│               (binary: HTTP + gRPC server)               │
-│                                                          │
-│  ┌──────────────┐         ┌────────────────────────┐    │
-│  │  vectradb-api │         │  gRPC service (tonic)   │    │
-│  │  (Axum REST)  │         │                        │    │
-│  └──────┬───────┘         └───────────┬────────────┘    │
-│         │                             │                  │
-│         └──────────┬──────────────────┘                  │
-│                    ▼                                     │
-│           ┌────────────────┐                             │
-│           │ vectradb-storage│                             │
-│           │  (Sled + Index) │                             │
-│           └───────┬────────┘                             │
-│                   │                                      │
-│         ┌─────────┴──────────┐                           │
-│         ▼                    ▼                            │
-│  ┌──────────────┐   ┌──────────────┐                     │
-│  │vectradb-search│   │  vectradb-   │                     │
-│  │(HNSW/LSH/PQ/ │   │  components  │                     │
-│  │    ES4D)      │   │ (types/math) │                     │
-│  └──────────────┘   └──────────────┘                     │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                  Server Mode                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ vectradb-api │  │  gRPC (tonic) │  │  vectradb-server │  │
+│  │  (REST/auth/ │  │               │  │   (binary/CLI)   │  │
+│  │  rate-limit) │  │               │  │                  │  │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────────┘  │
+│         └────────┬────────┘                                  │
+└──────────────────┼──────────────────────────────────────────┘
+                   ▼
+┌──────────────────────────────┐   ┌──────────────────────┐
+│       vectradb (library)      │   │  vectradb-embeddings  │
+│  (clean in-process API)       │   │  (Ollama/OpenAI/etc)  │
+└──────────────┬───────────────┘   └──────────────────────┘
+               ▼
+┌──────────────────────────────┐
+│      vectradb-storage         │
+│  (Sled persistence + index)   │
+└──────────────┬───────────────┘
+               ▼
+┌──────────────────────────────┐   ┌──────────────────────┐
+│      vectradb-search          │   │  vectradb-components  │
+│  HNSW / ES4D / IVF / SQ /    │   │  (types, traits,      │
+│  LSH / PQ / TensorSearch      │   │   filter, tensor)     │
+│  + SIMD distance (simd.rs)    │   │                       │
+└──────────────────────────────┘   └──────────────────────┘
 
-Standalone crates (not in the request path):
-  vectradb-chunkers   — text splitting utilities
-  vectradb-py         — PyO3 Python bindings
+Standalone: vectradb-chunkers, vectradb-tfidf, vectradb-rag, vectradb-eval
 ```
 
 ## Crate Responsibilities
@@ -76,12 +88,33 @@ pub trait AdvancedSearch {
 
 **Algorithms:**
 
-| Module | Struct | How it works |
-|--------|--------|-------------|
-| `hnsw.rs` | `HNSWIndex` | Navigable small-world graph. O(1) node lookup via HashMap. Greedy beam search with configurable ef parameter. |
-| `es4d.rs` | `ES4DIndex` | HNSW + dimension-level early termination + k-means clustering for cluster-level pruning + dimension reordering by variance. |
-| `lsh.rs` | `LSHIndex` | Random hyperplane hashing. Groups similar vectors into buckets. Falls back to linear scan when needed. |
-| `pq.rs` | `PQIndex` | Splits vectors into subspaces, quantizes each with k-means codebooks. Stores compact byte codes. |
+| Module | Struct | Recall@10 | How it works |
+|--------|--------|:---------:|-------------|
+| `hnsw.rs` | `HNSWIndex` | 98.5% | Navigable small-world graph. O(1) HashMap lookups. SIMD distance. |
+| `es4d.rs` | `ES4DIndex` | 100% | HNSW + DET (dimension-level early termination) + CET + dim reordering. |
+| `ivf.rs` | `IVFIndex` | 73%* | K-means++ partitioning. Searches only nprobe closest clusters. |
+| `sq.rs` | `SQIndex` | 100% | Scalar quantization (f32→uint8). 4x memory reduction. |
+| `lsh.rs` | `LSHIndex` | 60% | Random hyperplane hashing into buckets. |
+| `pq.rs` | `PQIndex` | 35% | Product quantization with k-means++ codebooks and ADC search. |
+| `tensor.rs` | `TensorSearchEngine` | — | Multi-dimensional tensor search (2D/3D/nD). |
+| `simd.rs` | — | — | AVX2/SSE/NEON distance functions (used by all algorithms). |
+
+*IVF recall depends on nprobe. Higher = better recall, slower.
+
+### vectradb (in-process library)
+
+The top-level `vectradb` crate provides a clean, simple API for using VectraDB without a server:
+
+```rust
+use vectradb::VectraDB;
+
+let mut db = VectraDB::open_with_dim("./data", 384).await?;
+db.insert("doc1", &vector, Some(tags))?;
+let results = db.search(&query, 10)?;
+let filtered = db.search_filtered(&query, 10, &filter)?;
+```
+
+Wraps `PersistentVectorDB` with ergonomic methods that accept `&[f32]` instead of `Array1<f32>`.
 
 ### vectradb-storage
 
