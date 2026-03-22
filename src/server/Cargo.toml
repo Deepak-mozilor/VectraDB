@@ -23,6 +23,8 @@ vectradb-storage = { path = "../storage" }
 vectradb-search = { path = "../search" }
 vectradb-components = { path = "../components" }
 vectradb-embeddings = { path = "../embeddings" }
+vectradb-tfidf = { path = "../tfidf" }
+vectradb-rag = { path = "../rag" }
 ndarray = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }

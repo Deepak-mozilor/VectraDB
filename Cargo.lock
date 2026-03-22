@@ -2926,6 +2926,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "ndarray",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -2933,8 +2934,11 @@ dependencies = [
  "tower-http 0.5.2",
  "vectradb-components",
  "vectradb-embeddings",
+ "vectradb-eval",
+ "vectradb-rag",
  "vectradb-search",
  "vectradb-storage",
+ "vectradb-tfidf",
 ]
 
 [[package]]
@@ -2977,6 +2981,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vectradb-eval"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "vectradb-py"
 version = "0.1.0"
 dependencies = [
@@ -2989,6 +3001,24 @@ dependencies = [
  "vectradb-chunkers",
  "vectradb-components",
  "vectradb-search",
+ "vectradb-storage",
+]
+
+[[package]]
+name = "vectradb-rag"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "ndarray",
+ "petgraph",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "vectradb-components",
+ "vectradb-embeddings",
  "vectradb-storage",
 ]
 
@@ -3026,8 +3056,10 @@ dependencies = [
  "vectradb-api",
  "vectradb-components",
  "vectradb-embeddings",
+ "vectradb-rag",
  "vectradb-search",
  "vectradb-storage",
+ "vectradb-tfidf",
 ]
 
 [[package]]
@@ -3038,12 +3070,14 @@ dependencies = [
  "bincode",
  "ndarray",
  "serde",
+ "serde_json",
  "sled",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "vectradb-components",
  "vectradb-search",
+ "vectradb-tfidf",
 ]
 
 [[package]]
@@ -3057,6 +3091,14 @@ dependencies = [
  "vectradb-components",
  "vectradb-search",
  "vectradb-storage",
+]
+
+[[package]]
+name = "vectradb-tfidf"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

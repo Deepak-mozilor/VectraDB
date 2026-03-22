@@ -1,12 +1,13 @@
 # Vector Database Benchmark Results
 
-**Config:** 10,000 vectors | 1536 dimensions | 100 queries | top-10 | L2 (Euclidean) distance
+**Config:** 10,000 vectors | 768 dimensions | 100 queries | top-10 | L2 (Euclidean) distance
 
 | Database   |   Insert (vec/s) |   Insert Total (s) |   p50 (ms) |   p95 (ms) |   p99 (ms) | Recall@10   |
 |------------|------------------|--------------------|------------|------------|------------|-------------|
-| VectraDB   |    512.6         |             19.509 |      8.62  |      9.035 |      9.398 | 83.60%      |
-| FAISS      |      2.10228e+06 |              0.005 |      0.953 |      1.189 |      1.305 | 100.00%     |
-| FAISS HNSW |   2199.6         |              4.546 |      1.078 |      1.176 |      1.275 | 64.80%      |
+| VectraDB   |    883.1         |             11.324 |      5.739 |     11.898 |     12.967 | 89.10%      |
+| FAISS      |      2.63109e+06 |              0.004 |      0.665 |      0.943 |      1.34  | 100.00%     |
+| Chroma     |   7034.6         |              1.422 |      0.839 |      1.202 |      1.469 | 42.90%      |
+| Qdrant     |   5377.2         |              1.86  |     15.769 |     17.328 |     18.288 | 100.00%     |
 
 ---
 

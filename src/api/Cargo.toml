@@ -25,6 +25,10 @@ vectradb-components = { path = "../components" }
 vectradb-storage = { path = "../storage" }
 vectradb-search = { path = "../search" }
 vectradb-embeddings = { path = "../embeddings" }
+vectradb-tfidf = { path = "../tfidf" }
+vectradb-eval = { path = "../eval" }
+vectradb-rag = { path = "../rag" }
+serde_json = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 tempfile = { workspace = true }

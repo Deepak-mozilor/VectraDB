@@ -39,6 +39,12 @@ pub struct AppState {
     /// GPU distance engine (optional, requires `gpu` feature).
     #[cfg(feature = "gpu")]
     pub gpu: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>>,
+    /// TF-IDF index for sparse text retrieval.
+    pub tfidf: Option<Arc<RwLock<vectradb_tfidf::TfIdfIndex>>>,
+    /// RAG pipeline.
+    pub rag_pipeline: Option<Arc<vectradb_rag::RagPipeline>>,
+    /// Graph-based retrieval agent.
+    pub graph_agent: Option<Arc<vectradb_rag::GraphAgent>>,
 }
 
 /// Request/Response types for API endpoints
@@ -186,6 +192,19 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/text", post(create_vector_from_text))
         .route("/search/text", post(search_by_text))
         .route("/vectors/text/batch", post(batch_create_from_text))
+        // Threshold search
+        .route("/search/threshold", post(search_threshold_handler))
+        // Hybrid search (dense + sparse)
+        .route("/search/hybrid", post(search_hybrid_handler))
+        // TF-IDF endpoints
+        .route("/tfidf/index", post(tfidf_index_handler))
+        .route("/tfidf/search", post(tfidf_search_handler))
+        .route("/tfidf/batch", post(tfidf_batch_handler))
+        // RAG endpoints
+        .route("/rag/query", post(rag_query_handler))
+        .route("/rag/agent", post(rag_agent_handler))
+        // Evaluation endpoint
+        .route("/eval/run", post(eval_run_handler))
         // Prometheus metrics endpoint
         .route("/metrics", get(metrics::metrics_handler))
         // Metrics recording middleware (innermost — records after response)
@@ -866,6 +885,9 @@ pub async fn start_server(
         metrics_handle: None,
         #[cfg(feature = "gpu")]
         gpu: None,
+        tfidf: None,
+        rag_pipeline: None,
+        graph_agent: None,
     };
 
     // Create router
@@ -877,6 +899,326 @@ pub async fn start_server(
 
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+// ============================================================
+// New request/response types
+// ============================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ThresholdSearchRequest {
+    pub vector: Vec<f32>,
+    pub min_similarity: f32,
+    pub max_results: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HybridSearchRequest {
+    pub text: String,
+    pub vector: Option<Vec<f32>>,
+    pub top_k: Option<usize>,
+    pub dense_candidates: Option<usize>,
+    pub sparse_candidates: Option<usize>,
+    pub fusion: Option<String>, // "rrf" or "weighted"
+    pub dense_weight: Option<f32>,
+    pub sparse_weight: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TfIdfIndexRequest {
+    pub id: String,
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TfIdfBatchRequest {
+    pub documents: Vec<TfIdfIndexRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TfIdfSearchRequest {
+    pub query: String,
+    pub top_k: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RagQueryRequest {
+    pub question: String,
+    pub top_k: Option<usize>,
+    pub system_prompt: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RagAgentRequest {
+    pub question: String,
+    pub max_depth: Option<usize>,
+    pub branch_factor: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EvalRunRequest {
+    pub queries: Vec<EvalQueryInput>,
+    pub k: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EvalQueryInput {
+    pub vector: Vec<f32>,
+    pub relevant_ids: Vec<String>,
+    pub relevance_scores: Option<Vec<f32>>,
+}
+
+// ============================================================
+// New handler implementations
+// ============================================================
+
+async fn search_threshold_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ThresholdSearchRequest>,
+) -> Result<Json<SearchResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let start = std::time::Instant::now();
+    let query_vector = Array1::from_vec(req.vector);
+    let max_results = req.max_results.unwrap_or(100);
+
+    let db = state.db.read().await;
+    let results = db
+        .search_by_threshold(query_vector, req.min_similarity, max_results)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "search_error".to_string(),
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    Ok(Json(SearchResponse {
+        results,
+        total_time_ms: start.elapsed().as_secs_f64() * 1000.0,
+    }))
+}
+
+async fn search_hybrid_handler(
+    State(state): State<AppState>,
+    Json(req): Json<HybridSearchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let start = std::time::Instant::now();
+    let top_k = req.top_k.unwrap_or(10);
+    let dense_candidates = req.dense_candidates.unwrap_or(top_k * 3);
+    let sparse_candidates = req.sparse_candidates.unwrap_or(top_k * 3);
+
+    // Get query vector: either provided or embed the text
+    let query_vector = if let Some(v) = req.vector {
+        Array1::from_vec(v)
+    } else if let Some(embedder) = &state.embedder {
+        let vec = embedder.embed(&req.text).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "embedding_error".to_string(),
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+        Array1::from_vec(vec)
+    } else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "missing_vector".to_string(),
+                message: "Either provide 'vector' or configure an embedding provider".to_string(),
+            }),
+        ));
+    };
+
+    let fusion = match req.fusion.as_deref() {
+        Some("weighted") => vectradb_storage::FusionMethod::WeightedSum {
+            dense_weight: req.dense_weight.unwrap_or(0.7),
+            sparse_weight: req.sparse_weight.unwrap_or(0.3),
+        },
+        _ => vectradb_storage::FusionMethod::ReciprocalRankFusion { k: 60 },
+    };
+
+    let db = state.db.read().await;
+    let results = db
+        .search_hybrid(
+            query_vector,
+            &req.text,
+            top_k,
+            dense_candidates,
+            sparse_candidates,
+            &fusion,
+        )
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "search_error".to_string(),
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+
+    Ok(Json(serde_json::json!({
+        "results": results,
+        "total_time_ms": start.elapsed().as_secs_f64() * 1000.0,
+    })))
+}
+
+async fn tfidf_index_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TfIdfIndexRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let tfidf = state.tfidf.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "tfidf_disabled".to_string(),
+                message: "TF-IDF indexing is not enabled".to_string(),
+            }),
+        )
+    })?;
+
+    tfidf.write().await.add_document(&req.id, &req.text);
+    Ok(Json(serde_json::json!({"status": "indexed", "id": req.id})))
+}
+
+async fn tfidf_batch_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TfIdfBatchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let tfidf = state.tfidf.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "tfidf_disabled".to_string(),
+                message: "TF-IDF indexing is not enabled".to_string(),
+            }),
+        )
+    })?;
+
+    let count = req.documents.len();
+    let mut tfidf = tfidf.write().await;
+    for doc in req.documents {
+        tfidf.add_document(&doc.id, &doc.text);
+    }
+
+    Ok(Json(
+        serde_json::json!({"status": "indexed", "count": count}),
+    ))
+}
+
+async fn tfidf_search_handler(
+    State(state): State<AppState>,
+    Json(req): Json<TfIdfSearchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let tfidf = state.tfidf.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "tfidf_disabled".to_string(),
+                message: "TF-IDF indexing is not enabled".to_string(),
+            }),
+        )
+    })?;
+
+    let top_k = req.top_k.unwrap_or(10);
+    let results = tfidf.read().await.search(&req.query, top_k);
+
+    Ok(Json(serde_json::json!({"results": results})))
+}
+
+async fn rag_query_handler(
+    State(state): State<AppState>,
+    Json(req): Json<RagQueryRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let rag = state.rag_pipeline.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "rag_disabled".to_string(),
+                message: "RAG pipeline is not configured. Set --llm-provider and --enable-rag"
+                    .to_string(),
+            }),
+        )
+    })?;
+
+    let response = rag.query(&req.question).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "rag_error".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(Json(serde_json::json!(response)))
+}
+
+async fn rag_agent_handler(
+    State(state): State<AppState>,
+    Json(req): Json<RagAgentRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let agent = state.graph_agent.as_ref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "agent_disabled".to_string(),
+                message: "Graph agent is not configured. Set --llm-provider and --enable-rag"
+                    .to_string(),
+            }),
+        )
+    })?;
+
+    let response = agent.query(&req.question).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "agent_error".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    Ok(Json(serde_json::json!(response)))
+}
+
+async fn eval_run_handler(
+    State(state): State<AppState>,
+    Json(req): Json<EvalRunRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let k = req.k.unwrap_or(10);
+    let db = state.db.read().await;
+
+    let mut eval_results = Vec::new();
+    for (i, q) in req.queries.iter().enumerate() {
+        let query_vector = Array1::from_vec(q.vector.clone());
+        let start = std::time::Instant::now();
+        let results = db.search_similar(query_vector, k).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "search_error".to_string(),
+                    message: e.to_string(),
+                }),
+            )
+        })?;
+        let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        let retrieved_ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
+        let gt = vectradb_eval::QueryGroundTruth {
+            query_id: format!("q{i}"),
+            relevant_ids: q.relevant_ids.clone(),
+            relevance_scores: q.relevance_scores.clone(),
+        };
+
+        eval_results.push((retrieved_ids, gt, latency_ms));
+    }
+
+    let report = vectradb_eval::Evaluator::evaluate(&eval_results, k);
+    Ok(Json(serde_json::json!(report)))
 }
 
 #[cfg(test)]
