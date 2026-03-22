@@ -9,6 +9,10 @@ keywords = ["vector-database", "similarity-search", "hnsw", "embeddings", "machi
 categories = ["database", "science"]
 readme = "../../README.md"
 
+[features]
+default = []
+gpu = ["vectradb-search/gpu", "vectradb-storage/gpu"]
+
 [dependencies]
 vectradb-components = { path = "../components" }
 vectradb-search = { path = "../search" }

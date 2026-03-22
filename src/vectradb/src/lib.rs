@@ -143,7 +143,11 @@ impl VectraDBBuilder {
             .await
             .map_err(|e| VectraDBError::DatabaseError(anyhow::anyhow!(e)))?;
 
-        Ok(VectraDB { inner: db })
+        Ok(VectraDB {
+            inner: db,
+            #[cfg(feature = "gpu")]
+            gpu: None,
+        })
     }
 }
 
@@ -152,6 +156,14 @@ impl VectraDBBuilder {
 /// Stores vectors on disk (via Sled) with an in-memory search index.
 /// No server needed — call methods directly from your code.
 ///
+/// # GPU Reranking
+///
+/// Enable the `gpu` feature for GPU-accelerated search:
+/// ```toml
+/// vectradb = { version = "0.1", features = ["gpu"] }
+/// ```
+/// Then call `db.enable_gpu()` and use `db.search_gpu()` or `db.search_gpu_rerank()`.
+///
 /// # Thread Safety
 ///
 /// `VectraDB` requires `&mut self` for write operations (insert, delete, update)
@@ -159,6 +171,8 @@ impl VectraDBBuilder {
 /// `Arc<RwLock<VectraDB>>` for multi-threaded access.
 pub struct VectraDB {
     inner: PersistentVectorDB,
+    #[cfg(feature = "gpu")]
+    gpu: Option<std::sync::Arc<vectradb_search::gpu::GpuDistanceEngine>>,
 }
 
 impl VectraDB {
@@ -279,6 +293,108 @@ impl VectraDB {
         let array = Array1::from_vec(query.to_vec());
         self.inner.search_with_filter(array, top_k, Some(filter))
     }
+
+    // ---- GPU operations (requires `gpu` feature) ----
+
+    /// Initialize the GPU engine. Call once after opening the database.
+    ///
+    /// Returns `true` if a GPU was found and initialized, `false` otherwise.
+    /// When no GPU is available, search methods fall back to CPU automatically.
+    ///
+    /// ```rust,no_run
+    /// # use vectradb::VectraDB;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut db = VectraDB::open_with_dim("./data", 384).await?;
+    /// if db.enable_gpu() {
+    ///     println!("GPU acceleration enabled!");
+    ///     let results = db.search_gpu_rerank(&query, 10, 200)?;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "gpu")]
+    pub fn enable_gpu(&mut self) -> bool {
+        match vectradb_search::gpu::GpuDistanceEngine::new(65536) {
+            Some(engine) => {
+                self.gpu = Some(std::sync::Arc::new(engine));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// GPU brute-force search — 100% recall.
+    ///
+    /// Sends all stored vectors to the GPU for parallel distance computation.
+    /// Bypasses the search index entirely. Best for small-to-medium datasets
+    /// where you need perfect recall.
+    #[cfg(feature = "gpu")]
+    pub fn search_gpu(
+        &self,
+        query: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<SimilarityResult>, VectraDBError> {
+        let gpu = self.gpu.as_ref().ok_or_else(|| {
+            VectraDBError::DatabaseError(anyhow::anyhow!(
+                "GPU not initialized. Call db.enable_gpu() first."
+            ))
+        })?;
+        let metric = self.inner.config().index_config.metric;
+        let array = Array1::from_vec(query.to_vec());
+        self.inner.search_gpu(array, top_k, gpu, metric)
+    }
+
+    /// GPU hybrid reranking — near-100% recall at HNSW speed.
+    ///
+    /// 1. HNSW fetches `rerank_ef` candidates on CPU (fast, approximate)
+    /// 2. GPU re-ranks all candidates with exact distance (precise)
+    /// 3. Returns the true top-k from the candidates
+    ///
+    /// This gives the speed of HNSW with the accuracy of brute-force.
+    /// Typical usage: `rerank_ef = top_k * 10` to `top_k * 20`.
+    ///
+    /// ```rust,no_run
+    /// # use vectradb::VectraDB;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut db = VectraDB::open_with_dim("./data", 384).await?;
+    /// db.enable_gpu();
+    ///
+    /// // HNSW finds 200 candidates, GPU picks the true top-10
+    /// let results = db.search_gpu_rerank(&[0.1, 0.2, 0.3], 10, 200)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(feature = "gpu")]
+    pub fn search_gpu_rerank(
+        &self,
+        query: &[f32],
+        top_k: usize,
+        rerank_ef: usize,
+    ) -> Result<Vec<SimilarityResult>, VectraDBError> {
+        let gpu = self.gpu.as_ref().ok_or_else(|| {
+            VectraDBError::DatabaseError(anyhow::anyhow!(
+                "GPU not initialized. Call db.enable_gpu() first."
+            ))
+        })?;
+        let metric = self.inner.config().index_config.metric;
+        let array = Array1::from_vec(query.to_vec());
+        self.inner
+            .search_gpu_rerank(array, top_k, rerank_ef, gpu, metric)
+    }
+
+    /// Check if GPU acceleration is available and initialized.
+    #[cfg(feature = "gpu")]
+    pub fn has_gpu(&self) -> bool {
+        self.gpu.is_some()
+    }
+
+    /// GPU is not available without the `gpu` feature.
+    #[cfg(not(feature = "gpu"))]
+    pub fn has_gpu(&self) -> bool {
+        false
+    }
+
+    // ---- Read operations (continued) ----
 
     /// Get a vector by ID.
     pub fn get(&self, id: &str) -> Result<VectorDoc, VectraDBError> {
