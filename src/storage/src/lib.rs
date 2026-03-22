@@ -3,14 +3,44 @@ use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use vectradb_components::{
     filter::MetadataFilter, DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata,
     VectraDBError,
 };
 use vectradb_search::{
-    AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, LSHIndex, PQIndex, SearchAlgorithm,
-    SearchConfig,
+    AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, IVFConfig, IVFIndex, LSHIndex, PQIndex,
+    SQIndex, SearchAlgorithm, SearchConfig,
 };
+
+/// Fusion method for hybrid search combining dense and sparse scores.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FusionMethod {
+    /// score = w_dense * dense_score + w_sparse * sparse_score
+    WeightedSum {
+        dense_weight: f32,
+        sparse_weight: f32,
+    },
+    /// Reciprocal Rank Fusion: score = sum(1 / (k + rank))
+    ReciprocalRankFusion { k: usize },
+}
+
+impl Default for FusionMethod {
+    fn default() -> Self {
+        FusionMethod::ReciprocalRankFusion { k: 60 }
+    }
+}
+
+/// Result of a hybrid search combining dense and sparse retrieval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSearchResult {
+    pub id: String,
+    pub dense_score: f32,
+    pub sparse_score: f32,
+    pub combined_score: f32,
+    pub metadata: VectorMetadata,
+    pub matched_terms: Vec<String>,
+}
 
 /// Persistent vector database with multiple indexing strategies
 pub struct PersistentVectorDB {
@@ -20,6 +50,7 @@ pub struct PersistentVectorDB {
     index: Box<dyn AdvancedSearch + Send + Sync>,
     config: DatabaseConfig,
     stats: DatabaseStats,
+    tfidf_index: Option<vectradb_tfidf::TfIdfIndex>,
 }
 
 /// Database configuration
@@ -89,6 +120,16 @@ impl PersistentVectorDB {
                 search_ef: config.index_config.search_ef,
                 ..Default::default()
             })),
+            SearchAlgorithm::SQ => Box::new(SQIndex::new(
+                config.index_config.dimension.unwrap_or(384),
+                config.index_config.metric,
+            )),
+            SearchAlgorithm::IVF => Box::new(IVFIndex::new(IVFConfig {
+                dimension: config.index_config.dimension.unwrap_or(384),
+                nlist: config.index_config.ivf_nlist.unwrap_or(256),
+                nprobe: config.index_config.ivf_nprobe.unwrap_or(16),
+                metric: config.index_config.metric,
+            })),
             _ => {
                 return Err(VectraDBError::DatabaseError(anyhow::anyhow!(
                     "Unsupported search algorithm"
@@ -103,6 +144,7 @@ impl PersistentVectorDB {
             index,
             config,
             stats: DatabaseStats::default(),
+            tfidf_index: None,
         };
 
         // Load existing data and rebuild index
@@ -111,8 +153,10 @@ impl PersistentVectorDB {
         Ok(db_instance)
     }
 
-    /// Rebuild the search index from persistent storage
+    /// Rebuild the search index from persistent storage.
+    /// Loads all vectors from Sled and feeds them to `build_index()`.
     async fn rebuild_index(&mut self) -> Result<(), VectraDBError> {
+        let start = Instant::now();
         let mut documents = Vec::new();
 
         for result in self.vectors_tree.iter() {
@@ -140,11 +184,24 @@ impl PersistentVectorDB {
             documents.push(document);
         }
 
+        let count = documents.len();
+        if count == 0 {
+            return Ok(());
+        }
+
         // Build index with loaded documents
         self.index.build_index(documents)?;
 
         // Update stats
         self.stats.total_vectors = self.vectors_tree.len();
+
+        let elapsed = start.elapsed();
+        eprintln!(
+            "Index rebuilt: {} vectors in {:.2}s ({:.0} vectors/sec)",
+            count,
+            elapsed.as_secs_f64(),
+            count as f64 / elapsed.as_secs_f64().max(0.001),
+        );
 
         Ok(())
     }
@@ -513,6 +570,214 @@ impl PersistentVectorDB {
             inserted,
             errors,
         })
+    }
+
+    /// Search by similarity threshold: returns all results with score >= min_similarity.
+    pub fn search_by_threshold(
+        &self,
+        query_vector: Array1<f32>,
+        min_similarity: f32,
+        max_results: usize,
+    ) -> Result<Vec<vectradb_components::SimilarityResult>, VectraDBError> {
+        let search_results =
+            self.index
+                .search_by_threshold(&query_vector, min_similarity, max_results)?;
+
+        let similarity_results = search_results
+            .into_iter()
+            .map(|result| {
+                let metadata = self
+                    .load_vector_sync(&result.id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| vectradb_components::VectorMetadata {
+                        id: result.id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                vectradb_components::SimilarityResult {
+                    id: result.id,
+                    score: result.similarity,
+                    metadata,
+                }
+            })
+            .collect();
+
+        Ok(similarity_results)
+    }
+
+    /// Enable TF-IDF indexing for hybrid search.
+    pub fn enable_tfidf(&mut self, config: vectradb_tfidf::TfIdfConfig) {
+        self.tfidf_index = Some(vectradb_tfidf::TfIdfIndex::new(config));
+    }
+
+    /// Index a document's text for TF-IDF sparse retrieval.
+    pub fn index_text(&mut self, id: &str, text: &str) {
+        if let Some(tfidf) = &mut self.tfidf_index {
+            tfidf.add_document(id, text);
+        }
+    }
+
+    /// Remove a document from the TF-IDF index.
+    pub fn remove_text(&mut self, id: &str) {
+        if let Some(tfidf) = &mut self.tfidf_index {
+            tfidf.remove_document(id);
+        }
+    }
+
+    /// Search the TF-IDF index (sparse text search only).
+    pub fn search_text(
+        &self,
+        query: &str,
+        top_k: usize,
+    ) -> Vec<vectradb_tfidf::SparseSearchResult> {
+        match &self.tfidf_index {
+            Some(tfidf) => tfidf.search(query, top_k),
+            None => vec![],
+        }
+    }
+
+    /// Hybrid search combining dense vector similarity and sparse TF-IDF.
+    pub fn search_hybrid(
+        &self,
+        query_vector: Array1<f32>,
+        query_text: &str,
+        top_k: usize,
+        dense_candidates: usize,
+        sparse_candidates: usize,
+        fusion: &FusionMethod,
+    ) -> Result<Vec<HybridSearchResult>, VectraDBError> {
+        // Dense search
+        let dense_results = self.index.search(&query_vector, dense_candidates)?;
+
+        // Sparse search
+        let sparse_results = match &self.tfidf_index {
+            Some(tfidf) => tfidf.search(query_text, sparse_candidates),
+            None => vec![],
+        };
+
+        // Fuse results
+        let fused = match fusion {
+            FusionMethod::WeightedSum {
+                dense_weight,
+                sparse_weight,
+            } => self.fuse_weighted_sum(
+                &dense_results,
+                &sparse_results,
+                *dense_weight,
+                *sparse_weight,
+            ),
+            FusionMethod::ReciprocalRankFusion { k } => {
+                self.fuse_rrf(&dense_results, &sparse_results, *k)
+            }
+        };
+
+        // Sort and truncate
+        let mut results = fused;
+        results.sort_by(|a, b| b.combined_score.total_cmp(&a.combined_score));
+        results.truncate(top_k);
+
+        Ok(results)
+    }
+
+    fn fuse_weighted_sum(
+        &self,
+        dense: &[vectradb_search::SearchResult],
+        sparse: &[vectradb_tfidf::SparseSearchResult],
+        w_dense: f32,
+        w_sparse: f32,
+    ) -> Vec<HybridSearchResult> {
+        let mut scores: HashMap<String, (f32, f32, Vec<String>)> = HashMap::new();
+
+        for r in dense {
+            scores.entry(r.id.clone()).or_insert((0.0, 0.0, vec![])).0 = r.similarity;
+        }
+        for r in sparse {
+            let entry = scores.entry(r.id.clone()).or_insert((0.0, 0.0, vec![]));
+            entry.1 = r.score;
+            entry.2 = r.matched_terms.clone();
+        }
+
+        scores
+            .into_iter()
+            .map(|(id, (dense_score, sparse_score, matched_terms))| {
+                let combined = w_dense * dense_score + w_sparse * sparse_score;
+                let metadata = self
+                    .load_vector_sync(&id)
+                    .map(|doc| doc.metadata)
+                    .unwrap_or_else(|_| VectorMetadata {
+                        id: id.clone(),
+                        dimension: 0,
+                        created_at: 0,
+                        updated_at: 0,
+                        tags: HashMap::new(),
+                    });
+                HybridSearchResult {
+                    id,
+                    dense_score,
+                    sparse_score,
+                    combined_score: combined,
+                    metadata,
+                    matched_terms,
+                }
+            })
+            .collect()
+    }
+
+    fn fuse_rrf(
+        &self,
+        dense: &[vectradb_search::SearchResult],
+        sparse: &[vectradb_tfidf::SparseSearchResult],
+        k: usize,
+    ) -> Vec<HybridSearchResult> {
+        let mut rrf_scores: HashMap<String, (f32, f32, f32, Vec<String>)> = HashMap::new();
+
+        // Dense RRF contribution
+        for (rank, r) in dense.iter().enumerate() {
+            let rrf = 1.0 / (k + rank + 1) as f32;
+            let entry = rrf_scores
+                .entry(r.id.clone())
+                .or_insert((0.0, r.similarity, 0.0, vec![]));
+            entry.0 += rrf;
+        }
+
+        // Sparse RRF contribution
+        for (rank, r) in sparse.iter().enumerate() {
+            let rrf = 1.0 / (k + rank + 1) as f32;
+            let entry = rrf_scores
+                .entry(r.id.clone())
+                .or_insert((0.0, 0.0, r.score, vec![]));
+            entry.0 += rrf;
+            entry.2 = r.score;
+            entry.3 = r.matched_terms.clone();
+        }
+
+        rrf_scores
+            .into_iter()
+            .map(
+                |(id, (combined_score, dense_score, sparse_score, matched_terms))| {
+                    let metadata = self
+                        .load_vector_sync(&id)
+                        .map(|doc| doc.metadata)
+                        .unwrap_or_else(|_| VectorMetadata {
+                            id: id.clone(),
+                            dimension: 0,
+                            created_at: 0,
+                            updated_at: 0,
+                            tags: HashMap::new(),
+                        });
+                    HybridSearchResult {
+                        id,
+                        dense_score,
+                        sparse_score,
+                        combined_score,
+                        metadata,
+                        matched_terms,
+                    }
+                },
+            )
+            .collect()
     }
 
     /// Manually flush all pending writes to disk.

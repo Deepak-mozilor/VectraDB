@@ -8,76 +8,8 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::time::Instant;
 use vectradb_components::{VectorDocument, VectraDBError};
 
-// ---- Fast distance helpers (no allocation, auto-vectorized) ----
-
-/// L2 squared distance computed in 4-wide chunks for auto-vectorization.
-#[inline]
-fn fast_l2_distance(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len();
-    let mut sum0: f32 = 0.0;
-    let mut sum1: f32 = 0.0;
-    let mut sum2: f32 = 0.0;
-    let mut sum3: f32 = 0.0;
-    let chunks = n / 4;
-    for i in 0..chunks {
-        let j = i * 4;
-        let d0 = a[j] - b[j];
-        let d1 = a[j + 1] - b[j + 1];
-        let d2 = a[j + 2] - b[j + 2];
-        let d3 = a[j + 3] - b[j + 3];
-        sum0 += d0 * d0;
-        sum1 += d1 * d1;
-        sum2 += d2 * d2;
-        sum3 += d3 * d3;
-    }
-    for i in (chunks * 4)..n {
-        let d = a[i] - b[i];
-        sum0 += d * d;
-    }
-    (sum0 + sum1 + sum2 + sum3).sqrt()
-}
-
-/// Dot product in 4-wide chunks.
-#[inline]
-fn fast_dot(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len();
-    let mut sum0: f32 = 0.0;
-    let mut sum1: f32 = 0.0;
-    let mut sum2: f32 = 0.0;
-    let mut sum3: f32 = 0.0;
-    let chunks = n / 4;
-    for i in 0..chunks {
-        let j = i * 4;
-        sum0 += a[j] * b[j];
-        sum1 += a[j + 1] * b[j + 1];
-        sum2 += a[j + 2] * b[j + 2];
-        sum3 += a[j + 3] * b[j + 3];
-    }
-    for i in (chunks * 4)..n {
-        sum0 += a[i] * b[i];
-    }
-    sum0 + sum1 + sum2 + sum3
-}
-
-/// Cosine distance: 1 - cosine_similarity.
-#[inline]
-fn fast_cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len();
-    let mut dot: f32 = 0.0;
-    let mut norm_a: f32 = 0.0;
-    let mut norm_b: f32 = 0.0;
-    for i in 0..n {
-        dot += a[i] * b[i];
-        norm_a += a[i] * a[i];
-        norm_b += b[i] * b[i];
-    }
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
-        1.0
-    } else {
-        1.0 - (dot / denom)
-    }
-}
+// Distance functions use SIMD-accelerated implementations from simd.rs
+use super::simd::{simd_cosine_distance, simd_dot, simd_l2_distance};
 
 /// HNSW (Hierarchical Navigable Small World) index implementation
 pub struct HNSWIndex {
@@ -219,9 +151,9 @@ impl HNSWIndex {
         let a = a.as_slice().unwrap();
         let b = b.as_slice().unwrap();
         match self.metric {
-            DistanceMetric::Euclidean => fast_l2_distance(a, b),
-            DistanceMetric::Cosine => fast_cosine_distance(a, b),
-            DistanceMetric::DotProduct => -fast_dot(a, b),
+            DistanceMetric::Euclidean => simd_l2_distance(a, b),
+            DistanceMetric::Cosine => simd_cosine_distance(a, b),
+            DistanceMetric::DotProduct => -simd_dot(a, b),
         }
     }
 

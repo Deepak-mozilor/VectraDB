@@ -18,6 +18,15 @@ pub mod es4d;
 /// TensorSearch: Parallel Similarity Search on multi-dimensional tensors
 pub mod tensor;
 
+/// Inverted File Index (IVF) — partitioned search for large datasets
+pub mod ivf;
+
+/// Scalar Quantization index (4x memory reduction)
+pub mod sq;
+
+/// SIMD-accelerated distance functions (AVX2 / SSE / NEON with scalar fallback)
+pub mod simd;
+
 /// GPU-accelerated batch distance computation (requires `gpu` feature)
 #[cfg(feature = "gpu")]
 pub mod gpu;
@@ -25,8 +34,10 @@ pub mod gpu;
 pub use es4d::{ES4DConfig, ES4DIndex};
 /// Re-export search algorithms
 pub use hnsw::HNSWIndex;
+pub use ivf::{IVFConfig, IVFIndex};
 pub use lsh::LSHIndex;
 pub use pq::PQIndex;
+pub use sq::SQIndex;
 pub use tensor::TensorSearchEngine;
 
 /// Distance metric used by search algorithms.
@@ -53,6 +64,8 @@ pub struct SearchConfig {
     pub codes_per_subspace: Option<usize>, // For PQ
     pub shard_length: Option<usize>,       // For ES4D (DET shard size, default 64)
     pub metric: DistanceMetric,            // Distance metric
+    pub ivf_nlist: Option<usize>,          // For IVF (number of clusters)
+    pub ivf_nprobe: Option<usize>,         // For IVF (clusters to search)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -62,6 +75,10 @@ pub enum SearchAlgorithm {
     PQ,
     Linear,
     ES4D,
+    /// Scalar Quantization — 4x memory reduction, brute-force search.
+    SQ,
+    /// Inverted File Index — partitioned search for large datasets.
+    IVF,
 }
 
 impl Default for SearchConfig {
@@ -80,6 +97,8 @@ impl Default for SearchConfig {
             codes_per_subspace: Some(256),
             shard_length: Some(64),
             metric: DistanceMetric::Euclidean,
+            ivf_nlist: Some(256),
+            ivf_nprobe: Some(16),
         }
     }
 }
@@ -145,6 +164,21 @@ pub trait AdvancedSearch {
         // Default: fall back to CPU search (overridden for HNSW/ES4D)
         let _ = (gpu, metric, rerank_ef);
         self.search(query, k)
+    }
+
+    /// Search by similarity threshold instead of top-k.
+    /// Returns all results with similarity >= `min_similarity`, up to `max_results`.
+    fn search_by_threshold(
+        &self,
+        query: &Array1<f32>,
+        min_similarity: f32,
+        max_results: usize,
+    ) -> Result<Vec<SearchResult>, VectraDBError> {
+        let results = self.search(query, max_results)?;
+        Ok(results
+            .into_iter()
+            .filter(|r| r.similarity >= min_similarity)
+            .collect())
     }
 
     fn insert(&mut self, document: VectorDocument) -> Result<(), VectraDBError>;
