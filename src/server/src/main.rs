@@ -288,6 +288,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_port = args.port;
     let http_tls = tls_config.clone();
 
+    // Prometheus metrics
+    let metrics_handle = vectradb_api::metrics::install_prometheus_recorder();
+    println!("Prometheus metrics: enabled at /metrics");
+
     // Start HTTP server task
     let http_handle = tokio::spawn(async move {
         let state = vectradb_api::AppState {
@@ -295,6 +299,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             embedder: http_embedder,
             auth: http_auth,
             rate_limiter: http_rate_limiter,
+            metrics_handle: Some(metrics_handle),
             #[cfg(feature = "gpu")]
             gpu: http_gpu,
         };

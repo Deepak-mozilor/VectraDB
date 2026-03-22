@@ -183,6 +183,7 @@ pub async fn rate_limit_middleware(
         );
         response
     } else {
+        crate::metrics::record_rate_limit_rejection();
         let body = format!(
             r#"{{"error":"too_many_requests","message":"Rate limit exceeded. Retry after {retry_after:.1}s","retry_after":{retry_after:.1}}}"#
         );

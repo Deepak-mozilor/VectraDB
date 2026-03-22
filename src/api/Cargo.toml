@@ -28,3 +28,5 @@ vectradb-embeddings = { path = "../embeddings" }
 clap = { workspace = true }
 env_logger = { workspace = true }
 tempfile = { workspace = true }
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
