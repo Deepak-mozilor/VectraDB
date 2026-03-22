@@ -19,7 +19,9 @@ use vectradb_components::{
 use vectradb_storage::{BatchInsertResult, DatabaseConfig, PersistentVectorDB};
 
 pub mod auth;
+pub mod rate_limit;
 pub use auth::AuthConfig;
+pub use rate_limit::{RateLimitConfig, RateLimiter};
 
 /// API server state
 #[derive(Clone)]
@@ -29,6 +31,8 @@ pub struct AppState {
     pub embedder: Option<Arc<dyn vectradb_embeddings::EmbeddingProvider>>,
     /// Authentication configuration.
     pub auth: Arc<AuthConfig>,
+    /// Rate limiter.
+    pub rate_limiter: Arc<RateLimiter>,
     /// GPU distance engine (optional, requires `gpu` feature).
     #[cfg(feature = "gpu")]
     pub gpu: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>>,
@@ -160,6 +164,7 @@ pub struct ErrorResponse {
 /// Create the API router
 pub fn create_router(state: AppState) -> Router {
     let auth_state = state.auth.clone();
+    let rate_limiter = state.rate_limiter.clone();
 
     Router::new()
         .route("/health", get(health_check))
@@ -182,6 +187,11 @@ pub fn create_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             auth_state,
             auth::auth_middleware,
+        ))
+        // Rate limiting (outermost — runs before auth, exempt /health)
+        .layer(middleware::from_fn_with_state(
+            rate_limiter,
+            rate_limit::rate_limit_middleware,
         ))
         .layer(DefaultBodyLimit::max(256 * 1024 * 1024)) // 256 MB for batch inserts
         .layer(
@@ -843,6 +853,7 @@ pub async fn start_server(
         db: Arc::new(RwLock::new(db)),
         embedder: None,
         auth: Arc::new(AuthConfig::disabled()),
+        rate_limiter: Arc::new(RateLimiter::new(RateLimitConfig::disabled())),
         #[cfg(feature = "gpu")]
         gpu: None,
     };

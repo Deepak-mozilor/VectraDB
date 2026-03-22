@@ -106,6 +106,14 @@ struct Args {
     /// TLS private key file (PEM format). Enables HTTPS when set with --tls-cert.
     #[arg(long)]
     tls_key: Option<PathBuf>,
+
+    /// Rate limit: max requests per second per IP (0 = disabled)
+    #[arg(long, default_value = "0")]
+    rate_limit: f64,
+
+    /// Rate limit burst size: max concurrent requests before throttling
+    #[arg(long, default_value = "100")]
+    rate_burst: u32,
 }
 
 #[tokio::main]
@@ -258,10 +266,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Rate limiter
+    let rate_config = vectradb_api::RateLimitConfig::new(args.rate_limit, args.rate_burst);
+    if rate_config.enabled {
+        println!(
+            "Rate limiting: {} req/s per IP (burst: {})",
+            args.rate_limit, args.rate_burst
+        );
+    } else {
+        println!("Rate limiting: disabled (use --rate-limit to enable)");
+    }
+    let rate_limiter = Arc::new(vectradb_api::RateLimiter::new(rate_config));
+
     // Clone shared database for HTTP server
     let http_db = db_arc.clone();
     let http_embedder = embedder.clone();
     let http_auth = auth_config.clone();
+    let http_rate_limiter = rate_limiter.clone();
     #[cfg(feature = "gpu")]
     let http_gpu = gpu_engine.clone();
     let http_port = args.port;
@@ -273,6 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             db: http_db,
             embedder: http_embedder,
             auth: http_auth,
+            rate_limiter: http_rate_limiter,
             #[cfg(feature = "gpu")]
             gpu: http_gpu,
         };
