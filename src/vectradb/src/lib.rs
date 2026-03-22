@@ -305,6 +305,7 @@ impl VectraDB {
     /// # use vectradb::VectraDB;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut db = VectraDB::open_with_dim("./data", 384).await?;
+    /// let query = vec![0.1f32; 384];
     /// if db.enable_gpu() {
     ///     println!("GPU acceleration enabled!");
     ///     let results = db.search_gpu_rerank(&query, 10, 200)?;
