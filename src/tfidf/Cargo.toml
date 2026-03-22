@@ -1,0 +1,10 @@
+[package]
+name = "vectradb-tfidf"
+version = "0.1.0"
+edition = "2021"
+description = "TF-IDF sparse text retrieval for VectraDB"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
