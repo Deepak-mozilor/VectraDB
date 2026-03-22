@@ -113,8 +113,14 @@ impl HNSWIndex {
             let idx = ep.index();
             if idx < node_count {
                 let d = self.distance_to_flat(query_slice, idx);
-                candidates.push(Reverse(HNSWEntry { distance: d, node: ep }));
-                results.push(HNSWEntry { distance: d, node: ep });
+                candidates.push(Reverse(HNSWEntry {
+                    distance: d,
+                    node: ep,
+                }));
+                results.push(HNSWEntry {
+                    distance: d,
+                    node: ep,
+                });
                 visited[idx] = true;
             }
         }
@@ -137,8 +143,14 @@ impl HNSWIndex {
 
                 let d = self.distance_to_flat(query_slice, nbr_idx);
                 if results.len() < ef || d < results.peek().unwrap().distance {
-                    candidates.push(Reverse(HNSWEntry { distance: d, node: nbr }));
-                    results.push(HNSWEntry { distance: d, node: nbr });
+                    candidates.push(Reverse(HNSWEntry {
+                        distance: d,
+                        node: nbr,
+                    }));
+                    results.push(HNSWEntry {
+                        distance: d,
+                        node: nbr,
+                    });
                     if results.len() > ef {
                         results.pop();
                     }
@@ -403,8 +415,7 @@ impl AdvancedSearch for HNSWIndex {
             .resize(self.graph.node_count() * self.dimension, 0.0);
         for idx in self.graph.node_indices() {
             let doc = &self.graph[idx];
-            self.id_to_node
-                .insert(doc.metadata.id.clone(), idx);
+            self.id_to_node.insert(doc.metadata.id.clone(), idx);
             if let Some(s) = doc.data.as_slice() {
                 let offset = idx.index() * self.dimension;
                 self.flat_vectors[offset..offset + self.dimension].copy_from_slice(s);
