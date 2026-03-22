@@ -12,6 +12,7 @@ members = [
     "src/eval",
     "src/tfidf",
     "src/rag",
+    "src/vectradb",
     "tests"
 ]
 
