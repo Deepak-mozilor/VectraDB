@@ -29,7 +29,9 @@ fn main() {
     }
     eprintln!("Index built.");
 
-    let queries: Vec<Array1<f32>> = (0..n_queries).map(|_| Array1::from_vec(gen_vec())).collect();
+    let queries: Vec<Array1<f32>> = (0..n_queries)
+        .map(|_| Array1::from_vec(gen_vec()))
+        .collect();
 
     // Warmup
     for q in &queries[..100] {
