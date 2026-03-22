@@ -13,7 +13,8 @@ members = [
     "src/tfidf",
     "src/rag",
     "src/vectradb",
-    "tests"
+    "tests",
+    "bench"
 ]
 
 [workspace.dependencies]

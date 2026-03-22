@@ -8,6 +8,10 @@ repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 homepage = "https://github.com/Amrithesh-Kakkoth/VectraDB"
 documentation = "https://github.com/Amrithesh-Kakkoth/VectraDB#readme"
 
+[features]
+default = ["gpu"]
+gpu = ["vectradb-search/gpu", "vectradb-storage/gpu"]
+
 [lib]
 name = "vectradb_py"
 crate-type = ["cdylib"]
