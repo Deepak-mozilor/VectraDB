@@ -2958,6 +2958,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vectradb-bench"
+version = "0.1.0"
+dependencies = [
+ "ndarray",
+ "vectradb-components",
+ "vectradb-search",
+]
+
+[[package]]
 name = "vectradb-chunkers"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,13 @@
+[package]
+name = "vectradb-bench"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "profile_search"
+path = "src/profile_search.rs"
+
+[dependencies]
+vectradb-search = { path = "../src/search" }
+vectradb-components = { path = "../src/components" }
+ndarray = "0.15"
