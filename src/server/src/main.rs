@@ -65,6 +65,14 @@ struct Args {
     #[arg(long, default_value = "euclidean")]
     metric: String,
 
+    /// IVF: number of clusters (partitions). Rule of thumb: sqrt(n) to 4*sqrt(n)
+    #[arg(long, default_value = "256")]
+    ivf_nlist: usize,
+
+    /// IVF: number of clusters to search per query (higher = better recall, slower)
+    #[arg(long, default_value = "16")]
+    ivf_nprobe: usize,
+
     /// Enable auto-flush
     #[arg(long, default_value = "true")]
     auto_flush: bool,
@@ -131,9 +139,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "pq" => SearchAlgorithm::PQ,
         "es4d" => SearchAlgorithm::ES4D,
         "sq" | "sq8" => SearchAlgorithm::SQ,
+        "ivf" => SearchAlgorithm::IVF,
         _ => {
             eprintln!(
-                "Invalid algorithm: {}. Supported: hnsw, lsh, pq, es4d, sq",
+                "Invalid algorithm: {}. Supported: hnsw, lsh, pq, es4d, sq, ivf",
                 args.algorithm
             );
             std::process::exit(1);
@@ -172,6 +181,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             codes_per_subspace: Some(256),
             shard_length: Some(args.shard_length),
             metric,
+            ivf_nlist: Some(args.ivf_nlist),
+            ivf_nprobe: Some(args.ivf_nprobe),
         },
         auto_flush: args.auto_flush,
         cache_size: args.cache_size,

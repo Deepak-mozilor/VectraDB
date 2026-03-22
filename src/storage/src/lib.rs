@@ -8,8 +8,8 @@ use vectradb_components::{
     VectraDBError,
 };
 use vectradb_search::{
-    AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, LSHIndex, PQIndex, SQIndex, SearchAlgorithm,
-    SearchConfig,
+    AdvancedSearch, ES4DConfig, ES4DIndex, HNSWIndex, IVFConfig, IVFIndex, LSHIndex, PQIndex,
+    SQIndex, SearchAlgorithm, SearchConfig,
 };
 
 /// Fusion method for hybrid search combining dense and sparse scores.
@@ -123,6 +123,12 @@ impl PersistentVectorDB {
                 config.index_config.dimension.unwrap_or(384),
                 config.index_config.metric,
             )),
+            SearchAlgorithm::IVF => Box::new(IVFIndex::new(IVFConfig {
+                dimension: config.index_config.dimension.unwrap_or(384),
+                nlist: config.index_config.ivf_nlist.unwrap_or(256),
+                nprobe: config.index_config.ivf_nprobe.unwrap_or(16),
+                metric: config.index_config.metric,
+            })),
             _ => {
                 return Err(VectraDBError::DatabaseError(anyhow::anyhow!(
                     "Unsupported search algorithm"
