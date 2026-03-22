@@ -24,6 +24,9 @@ pub struct HNSWIndex {
     stats: SearchStats,
     dimension: usize,
     metric: DistanceMetric,
+    /// Contiguous vector storage: all vectors packed as [v0_d0..v0_dN, v1_d0..v1_dN, ...]
+    /// Indexed by node_index * dimension. Cache-friendly for distance computation.
+    flat_vectors: Vec<f32>,
 }
 
 /// Heap entry ordered by distance for greedy search.
@@ -70,6 +73,7 @@ impl HNSWIndex {
             stats: SearchStats::default(),
             dimension,
             metric,
+            flat_vectors: Vec::new(),
         }
     }
 
@@ -83,29 +87,35 @@ impl HNSWIndex {
         level
     }
 
-    /// Greedy beam search on the graph. Returns up to `ef` closest results.
+    /// Greedy beam search on the graph.
+    ///
+    /// Optimized for cache-friendliness:
+    /// - Bit-vector visited set (no hashing overhead)
+    /// - Contiguous flat_vectors for distance computation (no pointer chasing)
+    /// - Pre-allocated heaps
     fn search_layer(
         &self,
         query: &Array1<f32>,
         entry_points: &[NodeIndex],
         ef: usize,
     ) -> Vec<HNSWEntry> {
-        let mut candidates: BinaryHeap<Reverse<HNSWEntry>> = BinaryHeap::new(); // min-heap
-        let mut results: BinaryHeap<HNSWEntry> = BinaryHeap::new(); // max-heap
-        let mut visited = HashSet::new();
+        let query_slice = query.as_slice().unwrap();
+        let node_count = self.graph.node_count();
+
+        // Bit-vector visited set: O(1) lookup, no hashing, cache-friendly
+        let mut visited = vec![false; node_count];
+
+        // Pre-allocated heaps
+        let mut candidates: BinaryHeap<Reverse<HNSWEntry>> = BinaryHeap::with_capacity(ef * 2);
+        let mut results: BinaryHeap<HNSWEntry> = BinaryHeap::with_capacity(ef + 1);
 
         for &ep in entry_points {
-            if let Some(doc) = self.graph.node_weight(ep) {
-                let d = self.calculate_distance(query, &doc.data);
-                candidates.push(Reverse(HNSWEntry {
-                    distance: d,
-                    node: ep,
-                }));
-                results.push(HNSWEntry {
-                    distance: d,
-                    node: ep,
-                });
-                visited.insert(ep);
+            let idx = ep.index();
+            if idx < node_count {
+                let d = self.distance_to_flat(query_slice, idx);
+                candidates.push(Reverse(HNSWEntry { distance: d, node: ep }));
+                results.push(HNSWEntry { distance: d, node: ep });
+                visited[idx] = true;
             }
         }
 
@@ -119,23 +129,18 @@ impl HNSWIndex {
             }
 
             for nbr in self.graph.neighbors(current.node) {
-                if !visited.insert(nbr) {
+                let nbr_idx = nbr.index();
+                if nbr_idx >= node_count || visited[nbr_idx] {
                     continue;
                 }
-                if let Some(doc) = self.graph.node_weight(nbr) {
-                    let d = self.calculate_distance(query, &doc.data);
-                    if results.len() < ef || d < results.peek().unwrap().distance {
-                        candidates.push(Reverse(HNSWEntry {
-                            distance: d,
-                            node: nbr,
-                        }));
-                        results.push(HNSWEntry {
-                            distance: d,
-                            node: nbr,
-                        });
-                        if results.len() > ef {
-                            results.pop();
-                        }
+                visited[nbr_idx] = true;
+
+                let d = self.distance_to_flat(query_slice, nbr_idx);
+                if results.len() < ef || d < results.peek().unwrap().distance {
+                    candidates.push(Reverse(HNSWEntry { distance: d, node: nbr }));
+                    results.push(HNSWEntry { distance: d, node: nbr });
+                    if results.len() > ef {
+                        results.pop();
                     }
                 }
             }
@@ -146,7 +151,37 @@ impl HNSWIndex {
         out
     }
 
-    /// Calculate distance between vectors using raw slices to avoid allocation.
+    /// Compute distance using the contiguous flat_vectors store (cache-friendly).
+    /// Falls back to graph node data if flat_vectors is out of sync.
+    #[inline]
+    fn distance_to_flat(&self, query: &[f32], node_idx: usize) -> f32 {
+        let offset = node_idx * self.dimension;
+        let end = offset + self.dimension;
+
+        if end <= self.flat_vectors.len() {
+            let b = &self.flat_vectors[offset..end];
+            match self.metric {
+                DistanceMetric::Euclidean => simd_l2_distance(query, b),
+                DistanceMetric::Cosine => simd_cosine_distance(query, b),
+                DistanceMetric::DotProduct => -simd_dot(query, b),
+            }
+        } else {
+            // Fallback: read from graph (slower, pointer chasing)
+            let node = NodeIndex::new(node_idx);
+            if let Some(doc) = self.graph.node_weight(node) {
+                let b = doc.data.as_slice().unwrap();
+                match self.metric {
+                    DistanceMetric::Euclidean => simd_l2_distance(query, b),
+                    DistanceMetric::Cosine => simd_cosine_distance(query, b),
+                    DistanceMetric::DotProduct => -simd_dot(query, b),
+                }
+            } else {
+                f32::INFINITY
+            }
+        }
+    }
+
+    /// Calculate distance between two Array1 vectors.
     fn calculate_distance(&self, a: &Array1<f32>, b: &Array1<f32>) -> f32 {
         let a = a.as_slice().unwrap();
         let b = b.as_slice().unwrap();
@@ -185,8 +220,18 @@ impl HNSWIndex {
         }
 
         let id = document.metadata.id.clone();
+        let vec_data = document.data.as_slice().unwrap().to_vec();
         let node_idx = self.graph.add_node(document.clone());
         self.id_to_node.insert(id.clone(), node_idx);
+
+        // Add to contiguous flat_vectors store
+        let required_len = (node_idx.index() + 1) * self.dimension;
+        if self.flat_vectors.len() < required_len {
+            self.flat_vectors.resize(required_len, 0.0);
+        }
+        let offset = node_idx.index() * self.dimension;
+        self.flat_vectors[offset..offset + self.dimension].copy_from_slice(&vec_data);
+
         let level = self.calculate_level();
 
         if self.entry_point.is_none() {
@@ -351,11 +396,19 @@ impl AdvancedSearch for HNSWIndex {
             self.entry_point = self.graph.node_indices().next();
         }
 
-        // After remove_node, petgraph may swap indices — rebuild the map
+        // After remove_node, petgraph may swap indices — rebuild map + flat_vectors
         self.id_to_node.clear();
+        self.flat_vectors.clear();
+        self.flat_vectors
+            .resize(self.graph.node_count() * self.dimension, 0.0);
         for idx in self.graph.node_indices() {
+            let doc = &self.graph[idx];
             self.id_to_node
-                .insert(self.graph[idx].metadata.id.clone(), idx);
+                .insert(doc.metadata.id.clone(), idx);
+            if let Some(s) = doc.data.as_slice() {
+                let offset = idx.index() * self.dimension;
+                self.flat_vectors[offset..offset + self.dimension].copy_from_slice(s);
+            }
         }
 
         self.stats.total_vectors = self.stats.total_vectors.saturating_sub(1);
