@@ -11,13 +11,28 @@ use vectradb_storage::{DatabaseConfig, PersistentVectorDB};
 #[pyclass]
 pub struct VectraDB {
     db: PersistentVectorDB,
+    #[cfg(feature = "gpu")]
+    gpu: Option<vectradb_search::gpu::GpuDistanceEngine>,
 }
 
 #[pymethods]
 impl VectraDB {
     /// Create a new VectraDB instance
     #[new]
-    pub fn new(data_dir: Option<String>, search_algorithm: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (data_dir=None, search_algorithm=None, dimension=None, search_ef=None))]
+    pub fn new(
+        data_dir: Option<String>,
+        search_algorithm: Option<String>,
+        dimension: Option<usize>,
+        search_ef: Option<usize>,
+    ) -> PyResult<Self> {
+        let mut index_config = vectradb_search::SearchConfig::default();
+        if let Some(dim) = dimension {
+            index_config.dimension = Some(dim);
+        }
+        if let Some(ef) = search_ef {
+            index_config.search_ef = ef;
+        }
         let config = DatabaseConfig {
             data_dir: data_dir.unwrap_or_else(|| "./vectradb_data".to_string()),
             search_algorithm: match search_algorithm
@@ -27,8 +42,10 @@ impl VectraDB {
                 "hnsw" => SearchAlgorithm::HNSW,
                 "lsh" => SearchAlgorithm::LSH,
                 "pq" => SearchAlgorithm::PQ,
+                "es4d" => SearchAlgorithm::ES4D,
                 _ => SearchAlgorithm::HNSW,
             },
+            index_config,
             ..Default::default()
         };
 
@@ -41,7 +58,14 @@ impl VectraDB {
             .block_on(PersistentVectorDB::new(config))
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        Ok(Self { db })
+        #[cfg(feature = "gpu")]
+        let gpu = vectradb_search::gpu::GpuDistanceEngine::new(100_000);
+
+        Ok(Self {
+            db,
+            #[cfg(feature = "gpu")]
+            gpu,
+        })
     }
 
     /// Create a new vector
@@ -104,24 +128,86 @@ impl VectraDB {
         Ok(())
     }
 
-    /// Search for similar vectors
+    /// Search for similar vectors (releases GIL for parallel search)
     pub fn search_similar(
         &self,
+        py: Python<'_>,
         query_vector: Vec<f32>,
         top_k: Option<usize>,
     ) -> PyResult<Vec<PySimilarityResult>> {
         let array_query = Array1::from_vec(query_vector);
         let top_k = top_k.unwrap_or(10);
 
-        let results = self
-            .db
-            .search_similar(array_query, top_k)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+        // Release Python GIL during the Rust search — enables true parallel search
+        let results = py.allow_threads(|| {
+            self.db.search_similar(array_query, top_k)
+        })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
 
         let py_results: Vec<PySimilarityResult> =
             results.into_iter().map(PySimilarityResult::from).collect();
 
         Ok(py_results)
+    }
+
+    /// Batch create vectors (much faster — single flush at end, releases GIL)
+    pub fn batch_create(
+        &mut self,
+        py: Python<'_>,
+        ids: Vec<String>,
+        vectors: Vec<Vec<f32>>,
+        tags: Option<Vec<Option<HashMap<String, String>>>>,
+    ) -> PyResult<(usize, usize)> {
+        let batch: Vec<_> = ids
+            .into_iter()
+            .zip(vectors.into_iter())
+            .enumerate()
+            .map(|(i, (id, vec))| {
+                let t = tags.as_ref().and_then(|ts| ts.get(i).cloned()).flatten();
+                (id, Array1::from_vec(vec), t)
+            })
+            .collect();
+
+        let result = py.allow_threads(|| {
+            self.db.batch_create_vectors(batch)
+        })
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+        Ok((result.inserted, result.total))
+    }
+
+    /// Search with GPU reranking (HNSW candidates → GPU exact distances)
+    #[cfg(feature = "gpu")]
+    #[pyo3(signature = (query_vector, top_k=None, rerank_ef=None))]
+    pub fn search_gpu(
+        &self,
+        query_vector: Vec<f32>,
+        top_k: Option<usize>,
+        rerank_ef: Option<usize>,
+    ) -> PyResult<Vec<PySimilarityResult>> {
+        let gpu = self.gpu.as_ref().ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No GPU adapter found")
+        })?;
+
+        let array_query = Array1::from_vec(query_vector);
+        let top_k = top_k.unwrap_or(10);
+        let rerank_ef = rerank_ef.unwrap_or(500);
+        let metric = self.db.config().index_config.metric;
+
+        let results = self
+            .db
+            .search_gpu_rerank(array_query, top_k, rerank_ef, gpu, metric)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+
+        Ok(results.into_iter().map(PySimilarityResult::from).collect())
+    }
+
+    /// Check if GPU is available
+    pub fn has_gpu(&self) -> bool {
+        #[cfg(feature = "gpu")]
+        { self.gpu.is_some() }
+        #[cfg(not(feature = "gpu"))]
+        { false }
     }
 
     /// List all vector IDs
