@@ -19,6 +19,7 @@ use vectradb_components::{
 use vectradb_storage::{BatchInsertResult, DatabaseConfig, PersistentVectorDB};
 
 pub mod auth;
+pub mod metrics;
 pub mod rate_limit;
 pub use auth::AuthConfig;
 pub use rate_limit::{RateLimitConfig, RateLimiter};
@@ -33,6 +34,8 @@ pub struct AppState {
     pub auth: Arc<AuthConfig>,
     /// Rate limiter.
     pub rate_limiter: Arc<RateLimiter>,
+    /// Prometheus metrics handle (None = metrics disabled).
+    pub metrics_handle: Option<metrics_exporter_prometheus::PrometheusHandle>,
     /// GPU distance engine (optional, requires `gpu` feature).
     #[cfg(feature = "gpu")]
     pub gpu: Option<Arc<vectradb_search::gpu::GpuDistanceEngine>>,
@@ -183,6 +186,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/vectors/text", post(create_vector_from_text))
         .route("/search/text", post(search_by_text))
         .route("/vectors/text/batch", post(batch_create_from_text))
+        // Prometheus metrics endpoint
+        .route("/metrics", get(metrics::metrics_handler))
+        // Metrics recording middleware (innermost — records after response)
+        .layer(middleware::from_fn(metrics::metrics_middleware))
         // Auth middleware (checks Bearer token on all routes except /health)
         .layer(middleware::from_fn_with_state(
             auth_state,
@@ -520,9 +527,11 @@ async fn search_vectors(
         }
     };
 
+    metrics::record_search_query();
+
     match search_result {
         Ok(results) => {
-            let total_time = start_time.elapsed().as_secs_f64() * 1000.0; // Convert to milliseconds
+            let total_time = start_time.elapsed().as_secs_f64() * 1000.0;
             Ok(Json(SearchResponse {
                 results,
                 total_time_ms: total_time,
@@ -854,6 +863,7 @@ pub async fn start_server(
         embedder: None,
         auth: Arc::new(AuthConfig::disabled()),
         rate_limiter: Arc::new(RateLimiter::new(RateLimitConfig::disabled())),
+        metrics_handle: None,
         #[cfg(feature = "gpu")]
         gpu: None,
     };
