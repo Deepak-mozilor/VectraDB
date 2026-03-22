@@ -18,6 +18,9 @@ pub mod es4d;
 /// TensorSearch: Parallel Similarity Search on multi-dimensional tensors
 pub mod tensor;
 
+/// Scalar Quantization index (4x memory reduction)
+pub mod sq;
+
 /// SIMD-accelerated distance functions (AVX2 / SSE / NEON with scalar fallback)
 pub mod simd;
 
@@ -30,6 +33,7 @@ pub use es4d::{ES4DConfig, ES4DIndex};
 pub use hnsw::HNSWIndex;
 pub use lsh::LSHIndex;
 pub use pq::PQIndex;
+pub use sq::SQIndex;
 pub use tensor::TensorSearchEngine;
 
 /// Distance metric used by search algorithms.
@@ -65,6 +69,8 @@ pub enum SearchAlgorithm {
     PQ,
     Linear,
     ES4D,
+    /// Scalar Quantization — 4x memory reduction, brute-force search.
+    SQ,
 }
 
 impl Default for SearchConfig {

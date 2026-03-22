@@ -130,9 +130,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "lsh" => SearchAlgorithm::LSH,
         "pq" => SearchAlgorithm::PQ,
         "es4d" => SearchAlgorithm::ES4D,
+        "sq" | "sq8" => SearchAlgorithm::SQ,
         _ => {
             eprintln!(
-                "Invalid algorithm: {}. Supported algorithms: hnsw, lsh, pq, es4d",
+                "Invalid algorithm: {}. Supported: hnsw, lsh, pq, es4d, sq",
                 args.algorithm
             );
             std::process::exit(1);
@@ -333,6 +334,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metrics_handle: Some(metrics_handle),
             #[cfg(feature = "gpu")]
             gpu: http_gpu,
+            tfidf: None,
+            rag_pipeline: None,
+            graph_agent: None,
         };
         let app = vectradb_api::create_router(state);
         let addr = format!("0.0.0.0:{}", http_port);

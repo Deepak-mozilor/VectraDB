@@ -268,13 +268,14 @@ impl PQIndex {
         // Precompute distance tables: dist_table[sub][code] = ||query_sub - centroid||²
         let mut dist_table = vec![vec![0.0f32; self.codes_per_subspace]; self.num_subspaces];
 
-        for sub in 0..self.num_subspaces {
+        for (sub, (table, codebook)) in dist_table.iter_mut().zip(self.codebooks.iter()).enumerate()
+        {
             let start = sub * self.subspace_size;
             let end = start + self.subspace_size;
             let query_sub = query.slice(s![start..end]);
 
-            for (c, centroid) in self.codebooks[sub].rows().into_iter().enumerate() {
-                dist_table[sub][c] = sq_dist(&query_sub, &centroid);
+            for (c, centroid) in codebook.rows().into_iter().enumerate() {
+                table[c] = sq_dist(&query_sub, &centroid);
             }
         }
 
