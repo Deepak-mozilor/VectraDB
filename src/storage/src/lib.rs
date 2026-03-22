@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sled::{Db, Tree};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use vectradb_components::{
     filter::MetadataFilter, DatabaseStats, VectorDatabase, VectorDocument, VectorMetadata,
     VectraDBError,
@@ -152,8 +153,10 @@ impl PersistentVectorDB {
         Ok(db_instance)
     }
 
-    /// Rebuild the search index from persistent storage
+    /// Rebuild the search index from persistent storage.
+    /// Loads all vectors from Sled and feeds them to `build_index()`.
     async fn rebuild_index(&mut self) -> Result<(), VectraDBError> {
+        let start = Instant::now();
         let mut documents = Vec::new();
 
         for result in self.vectors_tree.iter() {
@@ -181,11 +184,24 @@ impl PersistentVectorDB {
             documents.push(document);
         }
 
+        let count = documents.len();
+        if count == 0 {
+            return Ok(());
+        }
+
         // Build index with loaded documents
         self.index.build_index(documents)?;
 
         // Update stats
         self.stats.total_vectors = self.vectors_tree.len();
+
+        let elapsed = start.elapsed();
+        eprintln!(
+            "Index rebuilt: {} vectors in {:.2}s ({:.0} vectors/sec)",
+            count,
+            elapsed.as_secs_f64(),
+            count as f64 / elapsed.as_secs_f64().max(0.001),
+        );
 
         Ok(())
     }
