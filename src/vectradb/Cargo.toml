@@ -1,0 +1,24 @@
+[package]
+name = "vectradb"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance vector database — use as a library or server"
+license = "MIT"
+repository = "https://github.com/Amrithesh-Kakkoth/VectraDB"
+keywords = ["vector-database", "similarity-search", "hnsw", "embeddings", "machine-learning"]
+categories = ["database", "science"]
+readme = "../../README.md"
+
+[dependencies]
+vectradb-components = { path = "../components" }
+vectradb-search = { path = "../search" }
+vectradb-storage = { path = "../storage" }
+ndarray = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+rand = { workspace = true }
