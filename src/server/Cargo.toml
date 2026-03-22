@@ -30,6 +30,9 @@ tokio = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 axum = { workspace = true }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
 
 [build-dependencies]
 tonic-build = { workspace = true }
