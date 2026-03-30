@@ -1253,3 +1253,12 @@ mod tests {
         assert_eq!(request.top_k, Some(5));
     }
 }
+
+use tower_http::cors::{CorsLayer, Any};
+
+let cors = CorsLayer::new()
+    .allow_origin(Any)
+    .allow_methods(Any)
+    .allow_headers(Any);
+
+let app = router.layer(cors);

@@ -22,7 +22,7 @@ serde = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-pyo3 = { workspace = true }
+pyo3 = { version = "0.20", features = ["extension-module"] }
 vectradb-components = { path = "../src/components" }
 vectradb-storage = { path = "../src/storage" }
 vectradb-search = { path = "../src/search" }
